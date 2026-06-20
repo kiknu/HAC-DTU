@@ -23,6 +23,13 @@ export DSDIR="/path/to/data"
 
 The script can be run from any directory and will download and extract data into the resolved `challenge_data` directory.
 
+## Development Tasks
+
+[`just`](https://just.systems/) is an optional, convenient task runner for common project commands. All tasks can still be run directly without `just`.
+
+- `just`: List available targets.
+- `just format`: Format Python files with Ruff (strongly recommended before commiting).
+
 ## Contributor Information
 
 - Add yourself as an author in `pyproject.toml`.
