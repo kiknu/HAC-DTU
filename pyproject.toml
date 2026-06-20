@@ -1,26 +1,19 @@
 [project]
-name = "hac"
+name = "hac-dtu"
 version = "0.1.0"
-description = "Code related to the Helsinki Asteroid Challenge submissions by the team from the Technical University of Denmark (DTU)."
+description = "Add your description here"
 readme = "README.md"
-authors = [
-    { name = "Jeppe Klitgaard", email = "hi@jeppe.science" }
-]
-requires-python = ">=3.14"
+requires-python = "==3.10.20"
 dependencies = [
-    "jax>=0.10.1",
     "matplotlib>=3.10.9",
-    "numpy>=2.4.6",
-    "numpy-stl[fast]>=4.0.0",
-    "scipy>=1.17.1",
-    "seaborn>=0.13.2",
+    "numpy>=2.2.6",
+    "pytorch3d",
+    "stl>=0.0.3",
+    "trimesh>=4.12.2",
 ]
 
-[dependency-groups]
-dev = [
-    "ipykernel<7",
-]
+[tool.uv.extra-build-dependencies]
+pytorch3d = ["torch"]
 
-[build-system]
-requires = ["uv_build>=0.10.2,<0.11.0"]
-build-backend = "uv_build"
+[tool.uv.sources]
+pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d.git" }
