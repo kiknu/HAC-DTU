@@ -10,15 +10,19 @@ requires-python = ">=3.14"
 dependencies = [
     "jax>=0.10.1",
     "matplotlib>=3.10.9",
+    "mitsuba>=3.8.0",
     "numpy>=2.4.6",
     "numpy-stl[fast]>=4.0.0",
+    "scikit-image>=0.26.0",
     "scipy>=1.17.1",
     "seaborn>=0.13.2",
+    "trimesh>=4.12.2",
 ]
 
 [dependency-groups]
 dev = [
     "ipykernel<7",
+    "marimo>=0.23.10",
 ]
 
 [build-system]

@@ -6,3 +6,6 @@ challenge_data.zip
 __pycache__/
 *.py[cod]
 .venv/
+
+# Marimo
+__marimo__/
