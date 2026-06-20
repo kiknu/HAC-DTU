@@ -4,19 +4,78 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import trimesh
 from pytorch3d.io import load_objs_as_meshes
 from pytorch3d.renderer import (
+    DirectionalLights,
     HardFlatShader,
     MeshRasterizer,
     MeshRenderer,
     OrthographicCameras,
-    PointLights,
     RasterizationSettings,
     TexturesVertex,
     look_at_view_transform,
 )
+from pytorch3d.renderer.blending import hard_rgb_blend
 from pytorch3d.structures import Meshes
+
+
+class LommelSeeligerOrthographicShader(nn.Module):
+    """
+    Calculates pixel intensities based on the Lommel-Seeliger reflection coefficient.
+    Assumes an orthographic camera and directional lighting.
+    """
+
+    def __init__(self, device, cameras, lights, albedo=1.0):
+        super().__init__()
+        self.cameras = cameras
+        self.lights = lights
+        self.albedo = albedo
+        self.device = device
+
+    def forward(self, fragments, meshes, **kwargs):
+        # Extract interpolated surface normals (N, H, W, K, 3)
+        normals = fragments.normals
+
+        # 1. Compute view direction vector (V)
+        # For PyTorch3D OrthographicCameras, rays are parallel.
+        # The 3rd column of the rotation matrix R represents the +Z view direction in world space.
+        view_dir = self.cameras.R[:, :, 2].view(-1, 1, 1, 1, 3)
+        view_dir = F.normalize(view_dir, p=2, dim=-1)
+
+        # 2. Compute light direction vector (L)
+        light_dir = self.lights.direction.view(-1, 1, 1, 1, 3)
+        light_dir = F.normalize(light_dir, p=2, dim=-1)
+
+        # 3. Calculate cosines of emergence and incidence
+        mu = torch.sum(normals * view_dir, dim=-1, keepdim=True)
+        mu_0 = torch.sum(normals * light_dir, dim=-1, keepdim=True)
+
+        # 4. Lommel-Seeliger formula application
+        # Valid surfaces must be facing both the camera and the light
+        valid_mask = (mu > 0) & (mu_0 > 0)
+
+        intensity = torch.zeros_like(mu)
+        denominator = mu + mu_0
+
+        # The reflection coefficient R_LS is proportional to 1 / (mu + mu_0).
+        # The observed intensity scales by mu_0: Intensity = mu_0 * R_LS
+        intensity[valid_mask] = (
+            mu_0[valid_mask] / denominator[valid_mask]
+        ) * self.albedo
+
+        # Apply calculated intensity to fragments
+        pixel_colors = torch.ones_like(normals) * intensity
+
+        # Blend fragments to resolve depth and handle background
+        images = hard_rgb_blend(
+            pixel_colors, fragments, blend_colors=torch.zeros_like(pixel_colors)
+        )
+
+        return images
+
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
@@ -92,34 +151,20 @@ def load_asteroid_mesh(model_num: int, device: torch.device) -> Meshes:
 
 
 def create_orthographic_camera(
-    eye_pos: np.ndarray, device: torch.device
+    eye_pos: np.ndarray,
+    target_pos: np.ndarray,
+    device: torch.device,
+    focal_length: float = 1.0,
 ) -> OrthographicCameras:
     """
-    Creates a PyTorch3D orthographic camera looking at the origin.
-
-    Args:
-        eye_pos (np.ndarray): The (X, Y, Z) position of the camera.
-        device (torch.device, optional): The compute device.
-
-    Returns:
-        OrthographicCameras: The configured camera object.
+    Creates a PyTorch3D orthographic camera looking at a specific target.
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Format the coordinate vector for PyTorch3D
     eye_tensor = torch.from_numpy(eye_pos).float().view(1, 3).to(device)
+    at_tensor = torch.from_numpy(target_pos).float().view(1, 3).to(device)
 
-    # Calculate the rotation (R) and translation (T) matrices.
-    # The camera looks at the origin (0, 0, 0) with the Y-axis (0, 1, 0) pointing 'up'.
-    R, T = look_at_view_transform(
-        eye=eye_tensor, at=((-50.0, 0.0, 0.0),), up=((0.0, 10.0, 0.0),)
-    )
+    R, T = look_at_view_transform(eye=eye_tensor, at=at_tensor, up=((0.0, 1.0, 0.0),))
 
-    # Initialize the orthographic camera.
-    # Note: If the mesh is large, adjusting the focal_length (e.g., focal_length=1.0/mesh_radius)
-    # may be required to keep the projection within the [-1, 1] NDC bounds.
-    camera = OrthographicCameras(device=device, R=R, T=T)
-
+    camera = OrthographicCameras(device=device, R=R, T=T, focal_length=focal_length)
     return camera
 
 
@@ -142,6 +187,7 @@ def render_mesh(
     camera: OrthographicCameras,
     device: torch.device,
     image_size: int = 32,
+    light_direction: list = [[1.0, 0.0, 0.0]],
 ) -> torch.Tensor:
     """
     Renders the mesh into an NxN image using PyTorch3D's MeshRenderer.
@@ -162,8 +208,9 @@ def render_mesh(
         faces_per_pixel=1,
     )
 
-    # Setup a simple light source facing the object
-    lights = PointLights(device=device, location=[[0.0, 0.0, -100.0]])
+    # Setup a directional light source (parallel rays)
+    # The direction defines the path the light travels.
+    lights = DirectionalLights(device=device, direction=light_direction)
 
     # Create a renderer combining rasterizer and shader
     renderer = MeshRenderer(
@@ -178,41 +225,75 @@ def render_mesh(
 
 
 if __name__ == "__main__":
-    compute_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    angles = torch.linspace(0, 2 * np.pi, steps=N)
 
-    # Define the sun camera direction/position
-    e_sun = np.array([-100.0, 0.0, 0.0])
+    compute_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the PyTorch3D mesh
     asteroid_mesh = load_asteroid_mesh(model_num=1, device=compute_device)
 
+    # ---------------------------------------------------------
+    # DYNAMIC FRAMING LOGIC
+    # ---------------------------------------------------------
+    # 1. Calculate bounding box and centroid
+    verts = asteroid_mesh.verts_packed()
+    min_verts = verts.min(dim=0).values
+    max_verts = verts.max(dim=0).values
+
+    centroid = (min_verts + max_verts) / 2.0
+    extent = (max_verts - min_verts).max()
+
+    # 2. Extend the base mesh to a batch of size N
+    batched_meshes = asteroid_mesh.extend(N)
+
+    # 3. Apply the batched transformations
+    from pytorch3d.transforms import Transform3d
+
+    transforms = Transform3d(device=device).rotate(R_batched)
+    rotated_batched_meshes = batched_meshes.update_verts(
+        transforms.transform_points(batched_meshes.verts_packed())
+    )
+
+    # 2. Position camera relative to the centroid
+    target_position = centroid.cpu().numpy()
+
+    # Place eye offset along the X-axis. (Distance strictly prevents Z-clipping)
+    distance = extent.item() * 2.0
+    e_sun = target_position + np.array([-distance, 0.0, 0.0])
+
+    # 3. Scale orthographic plane to perfectly fit the max dimension
+    # Multiplied by a small factor (e.g., 0.9) to add padding around the edges
+    plane_scale = (2.0 / extent.item()) * 0.9
+
     # Initialize the camera setup
-    sun_camera = create_orthographic_camera(e_sun, device=compute_device)
+    sun_camera = create_orthographic_camera(
+        eye_pos=e_sun,
+        target_pos=target_position,
+        device=compute_device,
+        focal_length=plane_scale,
+    )
 
-    # Project the vertices into screen space
-    projected_vertices = project_mesh_vertices(asteroid_mesh, sun_camera)
+    # ---------------------------------------------------------
+    # RENDER CONFIGURATION
+    # ---------------------------------------------------------
+    # Offset the light direction so it strikes the object at an angle, revealing 3D contours.
+    # [1.0, 1.0, 1.0] casts light diagonally across the geometry.
+    offset_light_direction = [[1.0, 1.0, 1.0]]
 
-    # Render the mesh to an NxN image
-    resolution = 32
+    # Increase resolution to capture surface details
+    resolution = 16
     rendered_image = render_mesh(
-        asteroid_mesh, sun_camera, image_size=resolution, device=compute_device
-    )
-
-    print("Camera initialized with properties:")
-    print(f"R matrix: {sun_camera.R.shape}")
-    print(f"T vector: {sun_camera.T.shape}\n")
-    print("Projection Results:")
-    print(
-        f"Original 3D Coordinates (first vertex): {asteroid_mesh.verts_packed()[0].cpu().numpy()}"
-    )
-    print(
-        f"Projected NDC Coordinates (first vertex): {projected_vertices[0].cpu().numpy()}"
+        mesh=asteroid_mesh,
+        camera=sun_camera,
+        device=compute_device,
+        image_size=resolution,
+        light_direction=offset_light_direction,
     )
 
     # Display and save the rendered image
     image_np = rendered_image.cpu().numpy()
-    plt.figure(figsize=(6, 6))
-    plt.imshow(image_np[..., :3])  # Display RGB channels, ignore alpha
+    plt.figure(figsize=(8, 8))
+    plt.imshow(image_np[..., :3])
     plt.title(f"Orthographic Projection ({resolution}x{resolution})")
     plt.axis("off")
 
