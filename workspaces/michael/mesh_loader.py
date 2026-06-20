@@ -18,7 +18,7 @@ from pytorch3d.renderer import (
     TexturesVertex,
     look_at_view_transform,
 )
-from pytorch3d.renderer.blending import BlendParams, hard_rgb_blend
+from pytorch3d.renderer.blending import BlendParams, hard_rgb_blend, softmax_rgb_blend
 from pytorch3d.structures import Meshes
 from pytorch3d.transforms import Transform3d, axis_angle_to_matrix
 
@@ -57,11 +57,11 @@ class LommelSeeligerOrthographicShader(nn.Module):
         )
         normals = F.normalize(normals, p=2, dim=-1)
 
-        # 2. Compute vectors
-        view_dir = self.cameras.R[:, :, 2].view(-1, 1, 1, 1, 3)
+        # 2. Compute vectors (Reversed to point FROM object TO camera/light)
+        view_dir = -self.cameras.R[:, :, 2].view(-1, 1, 1, 1, 3)
         view_dir = F.normalize(view_dir, p=2, dim=-1)
 
-        light_dir = self.lights.direction.view(-1, 1, 1, 1, 3)
+        light_dir = -self.lights.direction.view(-1, 1, 1, 1, 3)
         light_dir = F.normalize(light_dir, p=2, dim=-1)
 
         # 3. Calculate cosines
@@ -79,8 +79,10 @@ class LommelSeeligerOrthographicShader(nn.Module):
 
         pixel_colors = torch.ones_like(normals) * intensity
 
-        # 5. Blend fragments using the defined BlendParams
-        images = hard_rgb_blend(pixel_colors, fragments, blend_params=self.blend_params)
+        # Replaced hard_rgb_blend with softmax_rgb_blend for differentiability
+        images = softmax_rgb_blend(
+            colors=pixel_colors, fragments=fragments, blend_params=self.blend_params
+        )
 
         return images
 
@@ -150,15 +152,15 @@ def render_mesh_batch(
         )
         meshes.textures = TexturesVertex(verts_features=verts_rgb)
 
+    # Adjusted for soft, differentiable rasterization
     raster_settings = RasterizationSettings(
         image_size=image_size,
-        blur_radius=0.0,
-        faces_per_pixel=1,
+        blur_radius=1e-4,  # Allows continuous gradients across edges
+        faces_per_pixel=50,  # Evaluates multiple faces for soft blending
     )
 
     lights = DirectionalLights(device=device, direction=light_direction)
 
-    # Instantiate the custom Lommel-Seeliger shader
     renderer = MeshRenderer(
         rasterizer=MeshRasterizer(cameras=camera, raster_settings=raster_settings),
         shader=LommelSeeligerOrthographicShader(
@@ -169,11 +171,28 @@ def render_mesh_batch(
     return renderer(meshes)
 
 
+def save_first_frame(
+    rendered_images: torch.Tensor, output_path: str = "first_frame.png"
+):
+    """
+    Extracts and saves the first frame from the rendered batch to verify
+    camera framing, scale, and lighting.
+    """
+    # Extract the first image and limit to the 3 RGB channels (drop alpha)
+    first_frame = rendered_images[0, ..., :3].detach().cpu().numpy()
+
+    # Clip values to [0, 1] to prevent matplotlib warnings upon saving
+    first_frame = np.clip(first_frame, 0.0, 1.0)
+
+    plt.imsave(output_path, first_frame)
+    print(f"Saved debug frame to '{output_path}'")
+
+
 if __name__ == "__main__":
     compute_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Define batch parameters
-    N = 720  # Number of frames for one full rotation
+    N = 180  # Number of frames for one full rotation
 
     # Load base mesh
     asteroid_mesh = load_asteroid_mesh(model_num=3, device=compute_device)
@@ -228,7 +247,7 @@ if __name__ == "__main__":
 
     # 5. Render the batch configuration
     offset_light_direction = [[1.0, 1.0, 1.0]]
-    resolution = 16
+    resolution = 32
 
     rendered_images = render_mesh_batch(
         meshes=rotated_batched_meshes,
@@ -237,6 +256,8 @@ if __name__ == "__main__":
         image_size=resolution,
         light_direction=offset_light_direction,
     )
+
+    save_first_frame(rendered_images, output_path="first_frame.png")
 
     # 6. Generate Lightcurve (Summing pixel intensities across the spatial dimensions)
     # rendered_images is of shape (N, H, W, 4). Slice the RGB channels, convert to grayscale/sum
