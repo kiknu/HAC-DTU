@@ -29,9 +29,10 @@ OUTPUT_DIR="$(CDPATH= cd "$DATA_DIR" && pwd -P)"
 
 # Ensure unzip exists
 if ! command -v unzip >/dev/null 2>&1; then
-  echo "unzip is not installed. Installing it now..."
-  sudo apt update
-  sudo apt install -y unzip
+  echo "unzip command is not available"
+  echo "Please install unzip and try again."
+  echo "On Debian/Ubuntu: sudo apt update && sudo apt-get install unzip"
+  exit 1
 fi
 
 ARCHIVE="$(dirname "$OUTPUT_DIR")/challenge_data.zip"
