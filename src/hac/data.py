@@ -2,7 +2,7 @@ from typing import Literal
 import pandas as pd
 from dataclasses import dataclass
 
-from hac.constants import CHALLENGE_DATA_DIR, DSDIR_ENV_VAR
+from hac.constants import CHALLENGE_DATA_DIR
 from pathlib import Path
 
 
@@ -17,7 +17,7 @@ def get_model_folder(model_num: int) -> Path:
     if not model_dir.is_dir():
         raise FileNotFoundError(
             f"Model data directory not found at {model_dir}. "
-            f"Ensure {DSDIR_ENV_VAR} points to a valid dataset root and run ./bin/get_challenge_data.sh."
+            f"Expected challenge data under {CHALLENGE_DATA_DIR}. Run ./bin/get_challenge_data.sh to download it."
         )
 
     return model_dir
@@ -39,7 +39,7 @@ def get_model_stl_path(model_num: int) -> Path:
     if not stl_file_path.is_file():
         raise FileNotFoundError(
             f"STL file not found at {stl_file_path}. "
-            f"Ensure {DSDIR_ENV_VAR} points to a valid dataset root and run ./bin/get_challenge_data.sh."
+            f"Expected challenge data under {CHALLENGE_DATA_DIR}. Run ./bin/get_challenge_data.sh to download it."
         )
 
     return stl_file_path
@@ -90,7 +90,7 @@ def load_data(
     if not lightcurve_data_dir.is_dir():
         raise FileNotFoundError(
             f"Light curve data directory not found at {lightcurve_data_dir}. "
-            f"Ensure {DSDIR_ENV_VAR} points to a valid dataset root and run ./bin/get_challenge_data.sh."
+            f"Expected challenge data under {CHALLENGE_DATA_DIR}. Run ./bin/get_challenge_data.sh to download it."
         )
 
     data_file_str = f"Asteroid{model_num:02d}_lightcurve_{curve_type}"
@@ -103,7 +103,7 @@ def load_data(
     if not data_file_path.is_file():
         raise FileNotFoundError(
             f"Data file not found at {data_file_path}. "
-            f"Ensure {DSDIR_ENV_VAR} points to a valid dataset root and run ./bin/get_challenge_data.sh."
+            f"Expected challenge data under {CHALLENGE_DATA_DIR}. Run ./bin/get_challenge_data.sh to download it."
         )
 
     # Load the data into a Dataframe

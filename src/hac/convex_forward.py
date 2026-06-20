@@ -1,6 +1,7 @@
 import numpy as np
 from stl import mesh
 import matplotlib.pyplot as plt
+from hac.constants import CAMERA_ANGLE_ALPHA
 from hac.data import get_model_stl_path, load_data
 import argparse
 import os
@@ -8,9 +9,11 @@ from concurrent.futures import ProcessPoolExecutor
 
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
+
 
 def get_unit_vectors(phi_deg, alpha_deg):
     """
@@ -32,13 +35,12 @@ def get_unit_vectors(phi_deg, alpha_deg):
     light_vector = np.array([-1, 0, 0])
 
     # Camera unit vector
-    camera_vector = np.array([
-        np.cos(phi) * np.cos(alpha),
-        np.sin(phi) * np.cos(alpha),
-        np.sin(alpha)
-    ])
+    camera_vector = np.array(
+        [np.cos(phi) * np.cos(alpha), np.sin(phi) * np.cos(alpha), np.sin(alpha)]
+    )
 
     return light_vector, camera_vector
+
 
 def convex_forward_model_gpu(
     stl_path: str,
@@ -50,7 +52,7 @@ def convex_forward_model_gpu(
     n_phases: int = 360,
     phase_batch_size: int = 512,
     normalize=True,
-    verbose=False
+    verbose=False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     GPU-accelerated version of convex_forward_model using CuPy.
@@ -73,12 +75,12 @@ def convex_forward_model_gpu(
         brightness: Normalised brightness array (same length as phases).
     """
     if not CUPY_AVAILABLE:
-        raise RuntimeError(
-            "CuPy is not installed. Run: pip install cupy-cuda11x"
-        )
+        raise RuntimeError("CuPy is not installed. Run: pip install cupy-cuda11x")
 
-    if scattering_law not in ("Lommel-Seeliger", "Lambert","LSL", "None"):
-        raise ValueError("scattering_law must be 'Lommel-Seeliger' or 'Lambert' or 'LSL'.")
+    if scattering_law not in ("Lommel-Seeliger", "Lambert", "LSL", "None"):
+        raise ValueError(
+            "scattering_law must be 'Lommel-Seeliger' or 'Lambert' or 'LSL'."
+        )
 
     # ------------------------------------------------------------------ #
     # 1. Load mesh and precompute normals + areas on the CPU              #
@@ -87,7 +89,9 @@ def convex_forward_model_gpu(
     if verbose:
         print(f"Length of vectors in mesh: {len(shape.vectors)}")
         print(f"Using scattering law: {scattering_law}")
-        print(f"With weight {Lambert_weight}") if scattering_law == "LSL" else print(" ")
+        print(f"With weight {Lambert_weight}") if scattering_law == "LSL" else print(
+            " "
+        )
 
     e_sun = np.asarray(e_sun, dtype=np.float32)
     e_obs = np.asarray(e_obs, dtype=np.float32)
@@ -98,16 +102,16 @@ def convex_forward_model_gpu(
     edge1 = vectors[:, 1, :] - vectors[:, 0, :]  # (n_facets, 3)
     edge2 = vectors[:, 2, :] - vectors[:, 0, :]
 
-    cross = np.cross(edge1, edge2)               # (n_facets, 3)
+    cross = np.cross(edge1, edge2)  # (n_facets, 3)
     norm_mag = np.linalg.norm(cross, axis=1, keepdims=True)
-    normals_cpu = cross / norm_mag               # (n_facets, 3)  unit normals
-    areas_cpu = 0.5 * norm_mag.squeeze(1)        # (n_facets,)
+    normals_cpu = cross / norm_mag  # (n_facets, 3)  unit normals
+    areas_cpu = 0.5 * norm_mag.squeeze(1)  # (n_facets,)
 
     # ------------------------------------------------------------------ #
     # 2. Move static data to GPU                                          #
     # ------------------------------------------------------------------ #
-    normals_gpu = cp.asarray(normals_cpu)        # (n_facets, 3)
-    areas_gpu = cp.asarray(areas_cpu)            # (n_facets,)
+    normals_gpu = cp.asarray(normals_cpu)  # (n_facets, 3)
+    areas_gpu = cp.asarray(areas_cpu)  # (n_facets,)
 
     # ------------------------------------------------------------------ #
     # 3. Generate phases and process in batches                           #
@@ -128,18 +132,24 @@ def convex_forward_model_gpu(
         # Rotate sun vector for each phase in batch: R_z(phase) @ e_sun
         # R_z = [[c, -s, 0], [s, c, 0], [0, 0, 1]]
         # Result: (B, 3)
-        e_sun_rot = cp.stack([
-            cos_p * ex_sun - sin_p * ey_sun,
-            sin_p * ex_sun + cos_p * ey_sun,
-            cp.full(len(batch_phases), ez_sun, dtype=cp.float32),
-        ], axis=1)
+        e_sun_rot = cp.stack(
+            [
+                cos_p * ex_sun - sin_p * ey_sun,
+                sin_p * ex_sun + cos_p * ey_sun,
+                cp.full(len(batch_phases), ez_sun, dtype=cp.float32),
+            ],
+            axis=1,
+        )
 
-        e_obs_rot = cp.stack([
-            cos_p * ex_obs - sin_p * ey_obs,
-            sin_p * ex_obs + cos_p * ey_obs,
-            cp.full(len(batch_phases), ez_obs, dtype=cp.float32),
-        ], axis=1)
-        
+        e_obs_rot = cp.stack(
+            [
+                cos_p * ex_obs - sin_p * ey_obs,
+                sin_p * ex_obs + cos_p * ey_obs,
+                cp.full(len(batch_phases), ez_obs, dtype=cp.float32),
+            ],
+            axis=1,
+        )
+
         # Dot products with all normals: (B, n_facets)
         mu0 = e_sun_rot @ normals_gpu.T
         mu = e_obs_rot @ normals_gpu.T
@@ -153,8 +163,10 @@ def convex_forward_model_gpu(
         elif scattering_law == "Lambert":  # Lambert
             S = cp.where(mask, mu * mu0, 0.0)
         elif scattering_law == "LSL":
-            #S = cp.where(mask, (1-Lambert_weight)*mu * mu0 / (mu + mu0)+Lambert_weight*mu*mu0,0.0)
-            S = cp.where(mask, mu * mu0 / (mu + mu0)+Lambert_weight*mu*mu0,0.0) # see e.g. eq (2) in https://arxiv.org/abs/2502.16455
+            # S = cp.where(mask, (1-Lambert_weight)*mu * mu0 / (mu + mu0)+Lambert_weight*mu*mu0,0.0)
+            S = cp.where(
+                mask, mu * mu0 / (mu + mu0) + Lambert_weight * mu * mu0, 0.0
+            )  # see e.g. eq (2) in https://arxiv.org/abs/2502.16455
         elif scattering_law == "None":
             S = cp.where(mask, mu, 0.0)
 
@@ -191,43 +203,13 @@ def _mse_for_weight(args):
 
 
 if __name__ == "__main__":
-   
-    parser = argparse.ArgumentParser(description='Convex forward model simulations')
-    parser.add_argument('--asteroid',  type=int,default=1)
-    parser.add_argument('--opt_weight', action='store_true')
-    parser.add_argument('--cam_angle',type=str, default="0_hor1")
+    parser = argparse.ArgumentParser(description="Convex forward model simulations")
+    parser.add_argument("--asteroid", type=int, default=1)
+    parser.add_argument("--opt_weight", action="store_true")
+    parser.add_argument("--cam_angle", type=str, default="0_hor1")
     args = parser.parse_args()
-  
-    alphas_dict = {
-        "0_hor1": 0,
-        "0_hor2": 0,
-        "0_top": 21,
-        "0_bottom": -21,
-        "45_hor1": 0,
-        "45_hor2": 0,
-        "45_top": 26,
-        "45_bottom": -26,
-        "90_hor1": 0,
-        "90_hor2": 0,
-        "90_top": 26,
-        "90_bottom": -26,
-        "135_hor1": 0,
-        "135_hor2": 0,
-        "135_top": 26,
-        "135_bottom": -26,
-        "225_hor1": 0,
-        "225_hor2": 0,
-        "225_top": 24,
-        "225_bottom": -24,
-        "270_hor1": 0,
-        "270_hor2": 0,
-        "270_top": 24,
-        "270_bottom": -24,
-        "315_hor1": 0,
-        "315_hor2": 0,
-        "315_top": 24,
-        "315_bottom": -24,
-    }
+
+    alphas_dict = CAMERA_ANGLE_ALPHA
 
     stl_path = str(get_model_stl_path(args.asteroid))
     ds_real = load_data(args.asteroid, "real", "intensity")
@@ -245,17 +227,31 @@ if __name__ == "__main__":
             for lw in lambert_weights
         ]
 
-        print(f"Running {len(lambert_weights)} weights in parallel on {n_workers} CPUs...")
+        print(
+            f"Running {len(lambert_weights)} weights in parallel on {n_workers} CPUs..."
+        )
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
             mse_per_weight = list(executor.map(_mse_for_weight, task_args))
 
         best_idx = int(np.argmin(mse_per_weight))
-        print(f"\nBest Lambert_weight: {lambert_weights[best_idx]:.4f}  MSE: {mse_per_weight[best_idx]:.6f}")
+        print(
+            f"\nBest Lambert_weight: {lambert_weights[best_idx]:.4f}  MSE: {mse_per_weight[best_idx]:.6f}"
+        )
 
         fig, ax = plt.subplots(figsize=(7, 4))
-        ax.plot(lambert_weights, mse_per_weight, marker="o", color="steelblue", linewidth=1.5)
-        ax.axvline(lambert_weights[best_idx], color="tomato", linestyle="--",
-                    label=f"best w={lambert_weights[best_idx]:.2f}")
+        ax.plot(
+            lambert_weights,
+            mse_per_weight,
+            marker="o",
+            color="steelblue",
+            linewidth=1.5,
+        )
+        ax.axvline(
+            lambert_weights[best_idx],
+            color="tomato",
+            linestyle="--",
+            label=f"best w={lambert_weights[best_idx]:.2f}",
+        )
         ax.set_xlabel("Lambert weight")
         ax.set_ylabel("Avg MSE (all geometries)")
         ax.set_title("LSL scattering: MSE vs Lambert weight")
@@ -267,14 +263,14 @@ if __name__ == "__main__":
         print(f"Saved figure to {out_path}")
 
     else:
-        camera = args.cam_angle  #e.g. "45_hor1"
+        camera = args.cam_angle  # e.g. "45_hor1"
         lw = 1
         scattering_law = "LSL"
         alpha_deg = alphas_dict[camera]
         phi_deg = int(camera.split("_")[0])
         print(f"alpha = {alpha_deg}")
         print(f"phi = {phi_deg}")
-        _, e_obs = get_unit_vectors(phi_deg=phi_deg,alpha_deg=alpha_deg)
+        _, e_obs = get_unit_vectors(phi_deg=phi_deg, alpha_deg=alpha_deg)
         print(f"e_obs = {e_obs}")
         phases, lc_model = convex_forward_model_gpu(
             stl_path,
@@ -284,21 +280,21 @@ if __name__ == "__main__":
             e_obs=e_obs,
             albedo=1.0,
             n_phases=360,
-            verbose=True
+            verbose=True,
         )
         real = ds_real.data[camera].values
         real_phases = np.linspace(0, 2 * np.pi, len(real), endpoint=False)
         blender = ds_blender.data[camera].values
 
-        print(f"MSE: { np.mean((lc_model - blender) ** 2)}")
+        print(f"MSE: {np.mean((lc_model - blender) ** 2)}")
         plt.figure()
         plt.title(f"Asteroid: {args.asteroid} - Intensity_Camera_{camera}")
         if scattering_law == "LSL":
-            plt.plot(phases, lc_model/blender, label=f"Convex forward (c={lw})")
+            plt.plot(phases, lc_model / blender, label=f"Convex forward (c={lw})")
         elif scattering_law == "Lambert":
-            plt.plot(phases, lc_model/blender, label=f"Convex forward (Lambert)")
-        plt.plot(phases, blender, label = "Blender simulation")
-        plt.plot(real_phases, real, label = "Real")
+            plt.plot(phases, lc_model / blender, label=f"Convex forward (Lambert)")
+        plt.plot(phases, blender, label="Blender simulation")
+        plt.plot(real_phases, real, label="Real")
         plt.legend()
         plt.show()
         if scattering_law == "LSL":

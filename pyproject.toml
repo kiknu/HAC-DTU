@@ -50,8 +50,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ipykernel<7",
-    "pytest",
-    "ruff",
+    "marimo>=0.23.10",
+    "ruff>=0.15.18",
 ]
 
 [[tool.uv.index]]
