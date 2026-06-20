@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # Ensure unzip exists
 if ! command -v unzip >/dev/null 2>&1; then
