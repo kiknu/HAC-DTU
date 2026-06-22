@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Code related to the Helsinki Asteroid Challenge submissions by the team from the Technical University of Denmark (DTU)."
 readme = "README.md"
 authors = [
-    { name = "Jeppe Klitgaard", email = "hi@jeppe.science" }
+    { name = "Jeppe Klitgaard", email = "hi@jeppe.science" },
+    { name = "Ishak Ayad", email = "ishak.ayad@centralesupelec.fr" }
 ]
 requires-python = ">=3.14"
 dependencies = [
@@ -17,6 +18,7 @@ dependencies = [
     "scipy>=1.17.1",
     "seaborn>=0.13.2",
     "trimesh>=4.12.2",
+    "rtree",
 ]
 
 [dependency-groups]
