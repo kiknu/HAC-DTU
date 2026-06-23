@@ -286,7 +286,7 @@ def render_mesh_batch(
     renderer = MeshRenderer(
         rasterizer=MeshRasterizer(cameras=camera, raster_settings=raster_settings),
         shader=LommelSeeligerOrthographicShader(
-            device=device, cameras=camera, lights=lights
+            device=device, cameras=camera, lights=lights, albedo=0.5
         ),
     )
 
@@ -296,7 +296,7 @@ def render_mesh_batch(
 def save_first_frame(
     rendered_images: torch.Tensor, output_path: str = "first_frame.png"
 ):
-    first_frame = rendered_images[8, ..., :3].detach().cpu().numpy()
+    first_frame = rendered_images[0, ..., :3].detach().cpu().numpy()
     first_frame = np.clip(first_frame, 0.0, 1.0)
     plt.imsave(output_path, first_frame)
     print(f"Saved debug frame to '{output_path}'")
@@ -383,7 +383,7 @@ if __name__ == "__main__":
 
     # Co-aligned light direction to match the "0_hor1" zero-degree phase angle
     offset_light_direction = [[1.0, 0.0, 0.0]]
-    resolution = 128
+    resolution = 256
 
     rendered_images = render_mesh_batch(
         meshes=rotated_batched_meshes,
