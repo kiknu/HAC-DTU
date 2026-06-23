@@ -1,3 +1,4 @@
+import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,12 +29,74 @@ from pytorch3d.transforms import Transform3d, axis_angle_to_matrix
 torch.set_default_dtype(torch.float32)
 
 
+# Define the project and challenge data directories
+PROJECT_DIR = Path(os.environ.get("DSDIR", Path(__file__).resolve().parent.parent))
+CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
+
+# Elevation angles from the challenge setup used in the convex baseline script.
+CAMERA_ELEVATION_DEG = {
+    "0_hor1": 0.0,
+    "0_hor2": 0.0,
+    "0_top": 21.0,
+    "0_bottom": -21.0,
+    "45_hor1": 0.0,
+    "45_hor2": 0.0,
+    "45_top": 26.0,
+    "45_bottom": -26.0,
+    "90_hor1": 0.0,
+    "90_hor2": 0.0,
+    "90_top": 26.0,
+    "90_bottom": -26.0,
+    "135_hor1": 0.0,
+    "135_hor2": 0.0,
+    "135_top": 26.0,
+    "135_bottom": -26.0,
+    "225_hor1": 0.0,
+    "225_hor2": 0.0,
+    "225_top": 24.0,
+    "225_bottom": -24.0,
+    "270_hor1": 0.0,
+    "270_hor2": 0.0,
+    "270_top": 24.0,
+    "270_bottom": -24.0,
+    "315_hor1": 0.0,
+    "315_hor2": 0.0,
+    "315_top": 24.0,
+    "315_bottom": -24.0,
+}
+
+
 @dataclass
 class Dataset:
     model_num: int
     origin: Literal["real", "simulated"]
     curve_type: Literal["binary", "intensity"]
     data: pd.DataFrame
+
+
+class CombinedShader(nn.Module):
+    def __init__(self, device, cameras, lights, albedo=1.0, blend_params=None):
+        super().__init__()
+        self.albedo = albedo
+        self.Lambertian = LambertianOrthographicShader(
+            device=device,
+            cameras=cameras,
+            lights=lights,
+            albedo=albedo,
+            blend_params=blend_params,
+        )
+        self.LS_shader = LommelSeeligerOrthographicShader(
+            device=device,
+            cameras=cameras,
+            lights=lights,
+            albedo=albedo,
+            blend_params=blend_params,
+        )
+
+    def forward(self, fragments, meshes, **kwargs):
+        lambertian = self.Lambertian(fragments, meshes, **kwargs)
+        ls = self.LS_shader(fragments, meshes, **kwargs)
+        return 0.5 * (lambertian + ls)
 
 
 class LommelSeeligerOrthographicShader(nn.Module):
@@ -142,10 +205,6 @@ class LambertianOrthographicShader(nn.Module):
         return images
 
 
-PROJECT_DIR = Path(__file__).resolve().parents[2]
-CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
-
-
 def get_model_folder(model_num: int) -> Path:
     _model_folder_suffix = "public" if model_num <= 3 else "secret"
     model_folder_str = f"AsteroidModel{model_num:02d}_shape_{_model_folder_suffix}"
@@ -242,6 +301,41 @@ def load_data(
     )
 
 
+def get_camera_angles_deg(target_column: str) -> tuple[float, float]:
+    try:
+        phi_str, suffix = target_column.split("_", maxsplit=1)
+        phi_deg = float(phi_str)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid target_column '{target_column}'. Expected format '<phi>_<suffix>'."
+        ) from exc
+
+    alpha_deg = CAMERA_ELEVATION_DEG.get(target_column)
+    if alpha_deg is None:
+        fallback_alpha = {"hor1": 0.0, "hor2": 0.0, "top": 26.0, "bottom": -26.0}
+        if suffix not in fallback_alpha:
+            raise ValueError(f"Unknown camera suffix '{suffix}' in '{target_column}'.")
+        alpha_deg = fallback_alpha[suffix]
+
+    return phi_deg, float(alpha_deg)
+
+
+def normalize_curve(curve: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+    mean_val = float(np.mean(curve))
+    if abs(mean_val) < eps:
+        raise ValueError("Cannot normalize curve with near-zero mean intensity.")
+    return curve / mean_val
+
+
+def pearson_corr(a: np.ndarray, b: np.ndarray) -> float:
+    a_centered = a - a.mean()
+    b_centered = b - b.mean()
+    denom = float(np.linalg.norm(a_centered) * np.linalg.norm(b_centered))
+    if denom <= 1e-12:
+        return 0.0
+    return float(np.dot(a_centered, b_centered) / denom)
+
+
 def create_orthographic_camera(
     eye_pos: np.ndarray,
     target_pos: np.ndarray,
@@ -252,6 +346,15 @@ def create_orthographic_camera(
     at_tensor = torch.from_numpy(target_pos).float().view(1, 3).to(device)
     R, T = look_at_view_transform(eye=eye_tensor, at=at_tensor, up=((0.0, 1.0, 0.0),))
     return OrthographicCameras(device=device, R=R, T=T, focal_length=focal_length)
+
+
+def shift_align(candidate: np.ndarray, best_shift: int = 0) -> tuple[np.ndarray, int]:
+    # Shift the candidate curve circularly by best_shift and return the aligned curve and the shift value.
+    N = len(candidate)
+    if N < 2:
+        raise ValueError("Candidate curve must have at least 2 points for alignment.")
+    aligned = np.roll(candidate, shift=best_shift)
+    return aligned, best_shift
 
 
 def render_mesh_batch(
@@ -271,7 +374,7 @@ def render_mesh_batch(
                 ],
                 device=device,
             )
-            * 0.7
+            * 1.0
         )
         meshes.textures = TexturesVertex(verts_features=verts_rgb)
 
@@ -285,8 +388,8 @@ def render_mesh_batch(
 
     renderer = MeshRenderer(
         rasterizer=MeshRasterizer(cameras=camera, raster_settings=raster_settings),
-        shader=LommelSeeligerOrthographicShader(
-            device=device, cameras=camera, lights=lights, albedo=0.5
+        shader=CombinedShader(
+            device=device, cameras=camera, lights=lights, albedo=1.0
         ),
     )
 
@@ -306,21 +409,24 @@ if __name__ == "__main__":
     compute_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     target_model = 3
 
-    # N=360 aligns with the challenge's specified interpolation grid for real/Blender data
-    N = 842
-
     # 1. Load Data & Geometries
     asteroid_mesh = load_asteroid_mesh(model_num=target_model, device=compute_device)
     real_dataset = load_data(
         model_num=target_model, origin="real", curve_type="intensity"
     )
 
-    # Extracting the 0-degree phase angle, horizontal camera curve as an example
-    target_column = "45_hor1"
-    real_intensity_curve = real_dataset.data[target_column].values
+    # Extracting one geometry curve for fitting/comparison.
+    target_column = "45_bottom"
+    if target_column not in real_dataset.data.columns:
+        raise ValueError(f"target_column '{target_column}' not found in loaded dataset.")
 
-    # Slice the real data to match the N=360 length if it contains extra frames
-    real_intensity_curve = real_intensity_curve[:N]
+    real_intensity_curve = real_dataset.data[target_column].to_numpy(dtype=np.float64)
+    real_frame_axis = real_dataset.data.index.to_numpy(dtype=np.float64)
+    N = len(real_intensity_curve)
+    if N < 2:
+        raise ValueError("Need at least 2 points in real observations to compare curves.")
+
+    print(f"Loaded {N} real samples for {target_column} (frames {real_frame_axis[0]}-{real_frame_axis[-1]}).")
 
     verts = asteroid_mesh.verts_packed()
     min_verts = verts.min(dim=0).values
@@ -330,37 +436,28 @@ if __name__ == "__main__":
 
     batched_meshes = asteroid_mesh.extend(N)
 
-    angles = torch.linspace(0, 2 * np.pi, steps=N, device=compute_device)
+    # endpoint=False avoids duplicating the 0-degree sample at 360 degrees.
+    angles = torch.arange(N, device=compute_device) * (2.0 * np.pi / N)
     axes = torch.zeros(N, 3, device=compute_device)
     axes[:, 2] = 1.0
 
     R_batched = axis_angle_to_matrix(axes * angles.unsqueeze(1))
     transforms = Transform3d(device=compute_device).rotate(R_batched)
 
+    # Rotate around the asteroid centroid, not around the world origin.
     verts_padded = batched_meshes.verts_padded()
-    verts_rotated = transforms.transform_points(verts_padded)
+    centroid_batched = centroid.view(1, 1, 3)
+    verts_centered = verts_padded - centroid_batched
+    verts_rotated = transforms.transform_points(verts_centered) + centroid_batched
     rotated_batched_meshes = batched_meshes.update_padded(verts_rotated)
 
     target_position = centroid.cpu().numpy()
     distance = extent.item() * 2.0
 
-    # Camera on the X-axis looking towards the origin
-    e_sun = target_position + np.array([-distance, 0.0, 0.0])
     plane_scale = (2.0 / extent.item()) * 0.9
 
-    # Extract angles based on the target_column (e.g., "0_hor1", "45_top")
-    phi_deg = float(target_column.split("_")[0])
-
-    # Map the suffix to the correct elevation (alpha)
-    alphas_dict = {"hor1": 0, "hor2": 0, "top": 26, "bottom": -26}
-    # Note: 0-degree phase angles have slightly different elevations (21/-21) in the reference script.
-    if phi_deg == 0 and "top" in target_column:
-        alpha_deg = 21
-    elif phi_deg == 0 and "bottom" in target_column:
-        alpha_deg = -21
-    else:
-        suffix = target_column.split("_")[1]
-        alpha_deg = alphas_dict.get(suffix, 0)
+    # Extract camera geometry from the selected observational column.
+    phi_deg, alpha_deg = get_camera_angles_deg(target_column)
 
     # Convert to radians
     phi = np.radians(phi_deg - 180)
@@ -381,9 +478,9 @@ if __name__ == "__main__":
         focal_length=plane_scale,
     )
 
-    # Co-aligned light direction to match the "0_hor1" zero-degree phase angle
+    # Keep the Sun direction fixed; phase angle comes from camera placement.
     offset_light_direction = [[1.0, 0.0, 0.0]]
-    resolution = 256
+    resolution = 128
 
     rendered_images = render_mesh_batch(
         meshes=rotated_batched_meshes,
@@ -398,55 +495,64 @@ if __name__ == "__main__":
     # 2. Extract and Normalize Curves
 
     simulated_rgb = rendered_images[..., :3]
+    simulated_alpha = rendered_images[..., 3:4]
 
-    # 25.5 on a 0-255 scale translates to 0.1 on a 0.0-1.0 scale
-    threshold_val = 25.5 / 255.0
+    # Alpha-weighting suppresses soft background blending leakage.
+    simulated_intensity_curve = (
+        (simulated_rgb * simulated_alpha).sum(dim=(1, 2, 3)).detach().cpu().numpy()
+    )
 
-    # Zero out pixels below the threshold
-    simulated_rgb[simulated_rgb < threshold_val] = 0.0
+    real_normalized = normalize_curve(real_intensity_curve)
+    simulated_normalized = normalize_curve(simulated_intensity_curve)
+    simulated_aligned, best_shift = shift_align(
+        candidate=simulated_normalized,
+        best_shift=-10,
+    )
 
-    simulated_intensity_curve = simulated_rgb.sum(dim=(1, 2, 3)).cpu().numpy()
+    mse_before = float(np.mean((real_normalized - simulated_normalized) ** 2))
+    mse_after = float(np.mean((real_normalized - simulated_aligned) ** 2))
+    corr_before = pearson_corr(real_normalized, simulated_normalized)
+    corr_after = pearson_corr(real_normalized, simulated_aligned)
 
-    # simulated_intensity_curve = (
-    #    rendered_images[..., :3].sum(dim=(1, 2, 3)).cpu().numpy()
-    # )
-
-    # Normalization prevents scaling mismatches between pixel-sums and physical sensor counts
-    simulated_normalized = simulated_intensity_curve / simulated_intensity_curve.mean()
-    real_normalized = real_intensity_curve / real_intensity_curve.mean()
-
-    from scipy import signal
-
-    # Calculate the optimal shift to align the phases
-    correlation = signal.correlate(real_normalized, simulated_normalized, mode="full")
-    shift = np.argmax(correlation) - (len(simulated_normalized) - 1)
-
-    # Apply the shift
-    real_aligned = np.roll(real_normalized, -shift)
+    print(
+        f"Alignment shift={best_shift} | MSE before={mse_before:.6f}, after={mse_after:.6f} | "
+        f"Corr before={corr_before:.4f}, after={corr_after:.4f}"
+    )
 
     # 3. Plot Comparison
     plt.figure(figsize=(10, 5))
-    x_axis = np.linspace(0, 360, N)
+    x_axis = real_frame_axis
 
     plt.plot(
         x_axis,
         simulated_normalized,
-        color="blue",
-        linewidth=2.0,
-        label="Simulated (Lommel-Seeliger)",
+        color="royalblue",
+        linewidth=1.2,
+        linestyle=":",
+        alpha=0.5,
+        label="Simulated (raw phase)",
     )
     plt.plot(
         x_axis,
-        real_aligned,
+        simulated_aligned,
+        color="blue",
+        linewidth=2.0,
+        label=f"Simulated (aligned, shift={best_shift})",
+    )
+    plt.plot(
+        x_axis,
+        real_normalized,
         color="red",
         linewidth=1.5,
         linestyle="--",
         alpha=0.8,
-        label=f"Real Data ({target_column})",
+        label=f"Real Data ({target_column}, normalized)",
     )
 
-    plt.title(f"Lightcurve Comparison: Model {target_model}")
-    plt.xlabel("Rotation Angle (Degrees)")
+    plt.title(
+        f"Lightcurve Comparison: Model {target_model} | {target_column} | MSE={mse_after:.5f}"
+    )
+    plt.xlabel("Observation Frame")
     plt.ylabel("Normalized Intensity (Mean = 1.0)")
     plt.legend()
     plt.grid(True, linestyle="--", alpha=0.6)
