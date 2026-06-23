@@ -409,10 +409,16 @@ if __name__ == "__main__":
     compute_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     target_model = 3
 
+    # N=360 aligns with the challenge's specified interpolation grid for real/Blender data
+    N = 842
+
+    origin = "real"
+    curve_type = "intensity"
+
     # 1. Load Data & Geometries
     asteroid_mesh = load_asteroid_mesh(model_num=target_model, device=compute_device)
     real_dataset = load_data(
-        model_num=target_model, origin="real", curve_type="intensity"
+        model_num=target_model, origin=origin, curve_type=curve_type
     )
 
     # Extracting one geometry curve for fitting/comparison.
@@ -539,6 +545,7 @@ if __name__ == "__main__":
         linewidth=2.0,
         label=f"Simulated (aligned, shift={best_shift})",
     )
+
     plt.plot(
         x_axis,
         real_normalized,
