@@ -142,6 +142,31 @@ class LambertianOrthographicShader(nn.Module):
         return images
 
 
+class CombinedShader(nn.Module):
+    def __init__(self, device, cameras, lights, albedo=1.0, blend_params=None):
+        super().__init__()
+        self.albedo = albedo
+        self.Lambertian = LambertianOrthographicShader(
+            device=device,
+            cameras=cameras,
+            lights=lights,
+            albedo=albedo,
+            blend_params=blend_params,
+        )
+        self.LS_shader = LommelSeeligerOrthographicShader(
+            device=device,
+            cameras=cameras,
+            lights=lights,
+            albedo=albedo,
+            blend_params=blend_params,
+        )
+
+    def forward(self, fragments, meshes, **kwargs):
+        lambertian = self.Lambertian(fragments, meshes, **kwargs)
+        ls = self.LS_shader(fragments, meshes, **kwargs)
+        return 0.5 * (lambertian + ls)
+
+
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
 
@@ -271,7 +296,7 @@ def render_mesh_batch(
                 ],
                 device=device,
             )
-            * 0.7
+            * 1
         )
         meshes.textures = TexturesVertex(verts_features=verts_rgb)
 
@@ -285,9 +310,7 @@ def render_mesh_batch(
 
     renderer = MeshRenderer(
         rasterizer=MeshRasterizer(cameras=camera, raster_settings=raster_settings),
-        shader=LommelSeeligerOrthographicShader(
-            device=device, cameras=camera, lights=lights, albedo=0.5
-        ),
+        shader=CombinedShader(device=device, cameras=camera, lights=lights, albedo=1.0),
     )
 
     return renderer(meshes)
@@ -309,10 +332,13 @@ if __name__ == "__main__":
     # N=360 aligns with the challenge's specified interpolation grid for real/Blender data
     N = 842
 
+    origin = "real"
+    curve_type = "intensity"
+
     # 1. Load Data & Geometries
     asteroid_mesh = load_asteroid_mesh(model_num=target_model, device=compute_device)
     real_dataset = load_data(
-        model_num=target_model, origin="real", curve_type="intensity"
+        model_num=target_model, origin=origin, curve_type=curve_type
     )
 
     # Extracting the 0-degree phase angle, horizontal camera curve as an example
@@ -355,9 +381,9 @@ if __name__ == "__main__":
     alphas_dict = {"hor1": 0, "hor2": 0, "top": 26, "bottom": -26}
     # Note: 0-degree phase angles have slightly different elevations (21/-21) in the reference script.
     if phi_deg == 0 and "top" in target_column:
-        alpha_deg = 21
+        alpha_deg = 26
     elif phi_deg == 0 and "bottom" in target_column:
-        alpha_deg = -21
+        alpha_deg = -26
     else:
         suffix = target_column.split("_")[1]
         alpha_deg = alphas_dict.get(suffix, 0)
@@ -383,7 +409,7 @@ if __name__ == "__main__":
 
     # Co-aligned light direction to match the "0_hor1" zero-degree phase angle
     offset_light_direction = [[1.0, 0.0, 0.0]]
-    resolution = 256
+    resolution = 100
 
     rendered_images = render_mesh_batch(
         meshes=rotated_batched_meshes,
@@ -422,7 +448,7 @@ if __name__ == "__main__":
     shift = np.argmax(correlation) - (len(simulated_normalized) - 1)
 
     # Apply the shift
-    real_aligned = np.roll(real_normalized, -shift)
+    real_aligned = real_normalized  # np.roll(real_normalized, -shift)
 
     # 3. Plot Comparison
     plt.figure(figsize=(10, 5))
@@ -433,8 +459,9 @@ if __name__ == "__main__":
         simulated_normalized,
         color="blue",
         linewidth=2.0,
-        label="Simulated (Lommel-Seeliger)",
+        label=f"Forward Model: Lommel-Seeliger",
     )
+
     plt.plot(
         x_axis,
         real_aligned,
@@ -442,7 +469,7 @@ if __name__ == "__main__":
         linewidth=1.5,
         linestyle="--",
         alpha=0.8,
-        label=f"Real Data ({target_column})",
+        label=f"{origin} Data ({target_column})",
     )
 
     plt.title(f"Lightcurve Comparison: Model {target_model}")
