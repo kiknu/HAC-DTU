@@ -2,7 +2,9 @@ import numpy as np
 import trimesh
 
 
-def calculate_voxel_measure(true_mesh: trimesh.Trimesh, pred_mesh: trimesh.Trimesh, pitch: float = 0.02) -> float:
+def calculate_voxel_measure(
+    true_mesh: trimesh.Trimesh, pred_mesh: trimesh.Trimesh, pitch: float = 0.02
+) -> float:
     """
     Fast voxel-based similarity measure.
 
