@@ -18,7 +18,7 @@ def _():
 
     import marimo as mo
 
-    return OBSERVERS, get_model_stl_path, imageio_ffmpeg, mi, mo, np, plt
+    return OBSERVERS, dr, get_model_stl_path, imageio_ffmpeg, mi, mo, np, plt
 
 
 @app.cell
@@ -199,6 +199,25 @@ def _(mi, np, renders):
 
 
 @app.cell
+def _(dr, renders):
+    renders_dr = dr.auto.Float(
+        [dr.sum(render) for render in renders]
+    )  # Convert to DrJit array for DrJit operations
+    return
+
+
+@app.cell
+def _(dr, np, renders):
+    lightcurve_dr = [dr.sum(render).numpy() for render in renders]
+    lightcurve_dr = dr(lightcurve_dr)
+    # Threshold
+    threshold_mask = lightcurve_dr > 25.5
+    lightcurve_dr = dr.where
+    lightcurve_dr /= np.mean(lightcurve_dr)
+    return (lightcurve_dr,)
+
+
+@app.cell
 def _(intensity, mi, np, renders):
     # Try DrJit
     def intensity_from_render(render):
@@ -222,7 +241,7 @@ def _(lightcurve, np):
 
 
 @app.cell
-def _(EXPERIMENT, MODEL_NUM, lightcurve_normalised, plt):
+def _(EXPERIMENT, MODEL_NUM, lightcurve_dr, lightcurve_normalised, np, plt):
     from hac.data import load_data
 
     ds = load_data(model_num=MODEL_NUM, origin="simulated", curve_type="intensity")
@@ -230,7 +249,21 @@ def _(EXPERIMENT, MODEL_NUM, lightcurve_normalised, plt):
 
     plt.plot(lightcurve_normalised, label="Mitsuba simulation")
     plt.plot(ds.data[EXPERIMENT], label="HAC simulation")
+    plt.plot(np.asarray(lightcurve_dr), label="Mitsuba DrJit simulation")
     plt.legend()
+    return
+
+
+@app.cell
+def _():
+    # Source - https://stackoverflow.com/a/71177358
+    # Posted by It_is_Chris
+    # Retrieved 2026-07-15, License - CC BY-SA 4.0
+
+    import matplotlib
+
+    print(matplotlib.get_cachedir())  # should return something like ~/.matplotlib
+
     return
 
 
