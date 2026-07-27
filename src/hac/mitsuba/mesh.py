@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+import trimesh
+
 from hac.mesh import convert_stl_to_obj
+
 
 @dataclass(frozen=True, slots=True)
 class MitsubaMesh:
@@ -16,3 +19,7 @@ class MitsubaMesh:
 
     def to_filename(self) -> str:
         return str(self.obj_path)
+
+    def to_trimesh(self) -> trimesh.Trimesh:
+        mesh = trimesh.load_mesh(self.obj_path, file_type="obj")
+        return mesh

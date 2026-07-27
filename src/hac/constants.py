@@ -58,7 +58,7 @@ CAMERA_ANGLE_ALPHA: dict[str, float] = {
 }
 
 # All observer positions according to https://fips.fi/data-challenges/helsinki-asteroid-challenge-2026/
-_DEFAULT_OBSERVER_DISTANCE = 10.0
+_DEFAULT_OBSERVER_DISTANCE = 5.0  # Must be greater than largest asteroid radius (3.95)
 OBSERVERS: dict[str, ObserverGeometry] = {
     "0_hor1": ObserverGeometry(theta=0.0, alpha=0.0, r_obs=_DEFAULT_OBSERVER_DISTANCE),
     "0_hor2": ObserverGeometry(theta=0.0, alpha=0.0, r_obs=_DEFAULT_OBSERVER_DISTANCE),
