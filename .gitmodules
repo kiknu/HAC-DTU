@@ -1,0 +1,4 @@
+[submodule "vendored/mitsuba3"]
+	path = vendored/mitsuba3
+	url = https://github.com/mitsuba-renderer/mitsuba3
+	branch = stable

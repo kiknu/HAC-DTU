@@ -1,3 +1,4 @@
+import numpy as np
 import trimesh
 
 
@@ -35,13 +36,11 @@ def calculate_voxel_measure(
     if len(true_voxels) == 0 and len(pred_voxels) == 0:
         return 0.0
 
-    # Compute the number of voxels in A\B and B\A
-    a_over_b = len(pred_voxels - true_voxels)
-    b_over_a = len(true_voxels - pred_voxels)
-    sum_mismatch = a_over_b + b_over_a
+    # Compute symmetric difference (voxels in A\B and B\A)
+    mismatch_count = len(true_voxels.symmetric_difference(pred_voxels))
 
     # Denominator from your original formula
     total_volume_sum = len(true_voxels) + len(pred_voxels)
-    score = 1.0 - (sum_mismatch / total_volume_sum)
+    score = 1.0 - mismatch_count / total_volume_sum
 
-    return score
+    return float(np.clip(score, 0.0, 1.0))

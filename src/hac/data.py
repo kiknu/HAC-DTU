@@ -1,9 +1,10 @@
-from typing import Literal
-import pandas as pd
 from dataclasses import dataclass
-
-from hac.constants import CHALLENGE_DATA_DIR
 from pathlib import Path
+from typing import Literal
+
+import pandas as pd
+
+from hac.constants import CHALLENGE_DATA_DIR, BASE_RADII
 
 
 def get_model_folder(model_num: int) -> Path:
@@ -62,6 +63,7 @@ class Dataset:
     ]  # Whether the data is binary (0/1) or intensity (0-255)
 
     data: pd.DataFrame  # The light curve data, with standardized index and columns
+    base_radius: float
 
     def melt_data_to_long(self) -> pd.DataFrame:
         """
@@ -149,4 +151,5 @@ def load_data(
         origin=origin,
         curve_type=curve_type,
         data=data,
+        base_radius=BASE_RADII[model_num - 1],
     )
