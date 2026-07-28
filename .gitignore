@@ -9,3 +9,6 @@ __pycache__/
 
 # Marimo
 __marimo__/
+
+workspaces/ishak/recon*
+workspaces/ishak/ckpt*

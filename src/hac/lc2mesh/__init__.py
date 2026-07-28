@@ -1,0 +1,93 @@
+"""Reusable modules for lc2mesh training and inference notebooks."""
+
+from hac.lc2mesh.dataset import (
+    AsteroidData,
+    SphericalMeshPrior,
+    create_spherical_prior,
+    load_asteroid_data,
+)
+from hac.lc2mesh.forward_model import (
+    AsteroidForwardModel,
+    fit_scale_offset_vectorized,
+    fourier_lowpass_periodic,
+    load_stl_geometry_torch,
+    observer_geometry_to_unit_vector,
+    observers_to_unit_tensor,
+)
+from hac.lc2mesh.metrics import (
+    apply_circular_shifts,
+    apply_period_scales,
+    blend_to_target_corr,
+    compute_per_camera_metrics,
+    compute_mae,
+    compute_mse,
+    compute_pearson_r,
+    estimate_best_circular_shifts,
+    estimate_best_period_scales_and_shifts,
+)
+from hac.lc2mesh.model import (
+    LightcurveToMesh,
+)
+from hac.lc2mesh.utils import (
+    build_fixed_subset,
+    chamfer_distance,
+    deformation_tv_regularization,
+    differentiable_voxel_measure,
+    edge_length_regularization,
+    laplacian_regularization,
+    resample_target_to_prior_directions,
+    set_seed,
+    setup_device,
+    soft_correspondence_normal_loss,
+    vertex_normals_from_faces,
+)
+from hac.lc2mesh.visualization import (
+    plot_camera_grid,
+    plot_interactive_mesh,
+    plot_interactive_mesh_3d,
+    plot_interactive_triangular_mesh,
+    plot_lightcurve_comparison,
+    triangles_to_vertices_faces,
+)
+
+
+__all__ = [
+    "AsteroidData",
+    "AsteroidForwardModel",
+    "LightcurveToMesh",
+    "SphericalMeshPrior",
+    "apply_circular_shifts",
+    "apply_period_scales",
+    "blend_to_target_corr",
+    "build_fixed_subset",
+    "chamfer_distance",
+    "compute_mae",
+    "compute_mse",
+    "compute_pearson_r",
+    "compute_per_camera_metrics",
+    "create_spherical_prior",
+    "deformation_tv_regularization",
+    "differentiable_voxel_measure",
+    "edge_length_regularization",
+    "estimate_best_circular_shifts",
+    "estimate_best_period_scales_and_shifts",
+    "fit_scale_offset_vectorized",
+    "fourier_lowpass_periodic",
+    "laplacian_regularization",
+    "load_asteroid_data",
+    "load_stl_geometry_torch",
+    "observer_geometry_to_unit_vector",
+    "observers_to_unit_tensor",
+    "plot_camera_grid",
+    "plot_interactive_mesh",
+    "plot_interactive_mesh_3d",
+    "plot_interactive_triangular_mesh",
+    "plot_lightcurve_comparison",
+    "resample_target_to_prior_directions",
+    "set_seed",
+    "setup_device",
+    "soft_correspondence_normal_loss",
+    "triangles_to_vertices_faces",
+    "vertex_normals_from_faces",
+]
+

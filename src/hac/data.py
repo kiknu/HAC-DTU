@@ -93,7 +93,7 @@ def load_data(
             f"Expected challenge data under {CHALLENGE_DATA_DIR}. Run ./bin/get_challenge_data.sh to download it."
         )
 
-    data_file_str = f"Asteroid{model_num:02d}_lightcurve_{curve_type}"
+    data_file_str = f"Asteroid0{model_num}_lightcurve_{curve_type}"
     if origin == "simulated":
         data_file_str += "_blender"
 

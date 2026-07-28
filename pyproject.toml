@@ -3,6 +3,7 @@ name = "hac"
 version = "0.1.0"
 description = "Code related to the Helsinki Asteroid Challenge submissions by the team from the Technical University of Denmark (DTU)."
 readme = "README.md"
+<<<<<<< Updated upstream
 requires-python = ">=3.11"
 
 authors = [
@@ -45,6 +46,31 @@ dependencies = [
     "runstats",
     "gdown",
     "nvitop",
+=======
+
+authors = [
+    { name = "Jeppe Klitgaard", email = "hi@jeppe.science" },
+    { name = "Ishak Ayad", email = "ishak.ayad@centralesupelec.fr" },
+    { name = "Christian Deding Nielsen", email = "cadni@dtu.dk" }
+]
+
+# Python 3.14 currently has limited support from many scientific packages.
+requires-python = ">=3.12,<3.14"
+
+dependencies = [
+    "jax",
+    "matplotlib",
+    "mitsuba",
+    "numpy",
+    "numpy-stl[fast]",
+    "plotly",
+    "scikit-image",
+    "scipy",
+    "seaborn",
+    "trimesh",
+    "rtree",
+    "cupy-cuda12x[ctk]",
+>>>>>>> Stashed changes
 ]
 
 [dependency-groups]
