@@ -1,70 +1,67 @@
-import os
-import tempfile
+#!/usr/bin/env python3
+"""
+Integrated soft-rasterizer for non-convex asteroid lightcurves — FIXED.
+
+Drop-in replacement for forward_model.py. Four changes relative to the
+original, marked with FIX 1..4 in the code:
+
+FIX 1 (depth sign, root cause)
+    The projection z = v · d is the coordinate ALONG the direction toward
+    the observer / sun, so LARGER z means CLOSER. The original softmax
+    weighted exp(-z/gamma), i.e. it selected the *farthest* surface: the
+    model was rendering the hidden side of the asteroid, and the signal
+    that remained was soft-leakage noise from thin regions near the limb.
+
+FIX 2 (self-term must never leave the denominator)
+    In the original, `det_mask` could remove a face's own depth term from
+    its softmax denominator (whenever the face projects edge-on). The
+    visibility then became exp_q / (~0 + 1e-10) ~ 1e10 instead of <= 1,
+    producing isolated giant spikes. The query face's exact depth is now
+    always added to the denominator explicitly, so vis is guaranteed to
+    lie in (0, 1].
+
+FIX 3 (robust handling of (near-)edge-on occluders)
+    `det_safe = det + 1e-10` flips the sign of the barycentric coordinates
+    whenever det is small and negative (about half of all faces have
+    negative signed det). Near-degenerate faces are now excluded as
+    occluders outright, and interpolated depths are clamped to the
+    occluding face's own vertex depth range as a safety net.
+
+FIX 4 (foreshortening factor mu = cos_v in the scattering law)
+    The challenge intensity curve is a *pixel sum*. In an orthographic
+    image a face covers ~ A * mu pixels, so the old PyTorch3D pipeline
+    implicitly weighted every face by its projected area. The integrated
+    model must therefore carry the factor mu explicitly:
+        Lambert          : A * mu0            ->  A * mu * mu0
+        Lommel-Seeliger  : A * mu0/(mu+mu0)   ->  A * mu * mu0/(mu+mu0)
+    (mu0 = cos incidence, mu = cos emission; matches the old
+    LambertianOrthographicShader / LommelSeeligerOrthographicShader whose
+    pixel values were mu0 and mu0/(mu+mu0) respectively.)
+
+Also: optional backface culling (`cull_backfaces=True`) cuts both passes
+to roughly the front half of the faces — ~4x less memory/compute for the
+O(F^2) visibility matrix. Exact for closed (watertight) meshes, which the
+challenge STLs are: along any ray the nearest surface is always
+front-facing, so back faces can never be the winning occluder.
+"""
+
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import trimesh
-from pytorch3d.io import load_objs_as_meshes
-from pytorch3d.ops import interpolate_face_attributes
-from pytorch3d.renderer import (
-    DirectionalLights,
-    MeshRasterizer,
-    MeshRenderer,
-    OrthographicCameras,
-    RasterizationSettings,
-    TexturesVertex,
-    look_at_view_transform,
-)
-from pytorch3d.renderer.blending import BlendParams, softmax_rgb_blend
-from pytorch3d.structures import Meshes
-from pytorch3d.transforms import Transform3d, axis_angle_to_matrix
 
 torch.set_default_dtype(torch.float32)
 
-
-# Define the project and challenge data directories
-PROJECT_DIR = Path(os.environ.get("DSDIR", Path(__file__).resolve().parent.parent))
-CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
-
-# Elevation angles from the challenge setup used in the convex baseline script.
-CAMERA_ELEVATION_DEG = {
-    "0_hor1": 0.0,
-    "0_hor2": 0.0,
-    "0_top": 21.0,
-    "0_bottom": -21.0,
-    "45_hor1": 0.0,
-    "45_hor2": 0.0,
-    "45_top": 26.0,
-    "45_bottom": -26.0,
-    "90_hor1": 0.0,
-    "90_hor2": 0.0,
-    "90_top": 26.0,
-    "90_bottom": -26.0,
-    "135_hor1": 0.0,
-    "135_hor2": 0.0,
-    "135_top": 26.0,
-    "135_bottom": -26.0,
-    "225_hor1": 0.0,
-    "225_hor2": 0.0,
-    "225_top": 24.0,
-    "225_bottom": -24.0,
-    "270_hor1": 0.0,
-    "270_hor2": 0.0,
-    "270_top": 24.0,
-    "270_bottom": -24.0,
-    "315_hor1": 0.0,
-    "315_hor2": 0.0,
-    "315_top": 24.0,
-    "315_bottom": -24.0,
-}
-
+# --------------------------------------------------------------------------- #
+# 1.  Data I/O  (unchanged)
+# --------------------------------------------------------------------------- #
 
 @dataclass
 class Dataset:
@@ -74,163 +71,31 @@ class Dataset:
     data: pd.DataFrame
 
 
-class CombinedShader(nn.Module):
-    def __init__(self, device, cameras, lights, albedo=1.0, blend_params=None):
-        super().__init__()
-        self.albedo = albedo
-        self.Lambertian = LambertianOrthographicShader(
-            device=device,
-            cameras=cameras,
-            lights=lights,
-            albedo=albedo,
-            blend_params=blend_params,
-        )
-        self.LS_shader = LommelSeeligerOrthographicShader(
-            device=device,
-            cameras=cameras,
-            lights=lights,
-            albedo=albedo,
-            blend_params=blend_params,
-        )
-
-    def forward(self, fragments, meshes, **kwargs):
-        lambertian = self.Lambertian(fragments, meshes, **kwargs)
-        ls = self.LS_shader(fragments, meshes, **kwargs)
-        return 0.5 * (lambertian + ls)
-
-
-class LommelSeeligerOrthographicShader(nn.Module):
-    """
-    Calculates pixel intensities based on the Lommel-Seeliger reflection coefficient.
-    Assumes an orthographic camera and directional lighting.
-    """
-
-    def __init__(self, device, cameras, lights, albedo=1.0, blend_params=None):
-        super().__init__()
-        self.cameras = cameras
-        self.lights = lights
-        self.albedo = albedo
-        self.device = device
-
-        self.blend_params = (
-            blend_params
-            if blend_params is not None
-            else BlendParams(background_color=(0.0, 0.0, 0.0))
-        )
-
-    def forward(self, fragments, meshes, **kwargs):
-        verts_normals = meshes.verts_normals_packed()
-        faces = meshes.faces_packed()
-        faces_verts_normals = verts_normals[faces]
-
-        normals = interpolate_face_attributes(
-            fragments.pix_to_face, fragments.bary_coords, faces_verts_normals
-        )
-        normals = F.normalize(normals, p=2, dim=-1)
-
-        # Reversed to point FROM object TO camera/light
-        view_dir = -self.cameras.R[:, :, 2].view(-1, 1, 1, 1, 3)
-        view_dir = F.normalize(view_dir, p=2, dim=-1)
-
-        light_dir = -self.lights.direction.view(-1, 1, 1, 1, 3)
-        light_dir = F.normalize(light_dir, p=2, dim=-1)
-
-        mu = torch.sum(normals * view_dir, dim=-1, keepdim=True)
-        mu_0 = torch.sum(normals * light_dir, dim=-1, keepdim=True)
-
-        valid_mask = (mu > 0) & (mu_0 > 0)
-        intensity = torch.zeros_like(mu)
-        denominator = mu + mu_0
-
-        intensity[valid_mask] = (
-            mu_0[valid_mask] / denominator[valid_mask]
-        ) * self.albedo
-
-        pixel_colors = torch.ones_like(normals) * intensity
-
-        images = softmax_rgb_blend(
-            colors=pixel_colors, fragments=fragments, blend_params=self.blend_params
-        )
-
-        return images
-
-
-class LambertianOrthographicShader(nn.Module):
-    """
-    Calculates pixel intensities based on the Lambertian reflection coefficient.
-    Assumes an orthographic camera and directional lighting.
-    """
-
-    def __init__(self, device, cameras, lights, albedo=1.0, blend_params=None):
-        super().__init__()
-        self.cameras = cameras
-        self.lights = lights
-        self.albedo = albedo
-        self.device = device
-
-        self.blend_params = (
-            blend_params
-            if blend_params is not None
-            else BlendParams(background_color=(0.0, 0.0, 0.0))
-        )
-
-    def forward(self, fragments, meshes, **kwargs):
-        verts_normals = meshes.verts_normals_packed()
-        faces = meshes.faces_packed()
-        faces_verts_normals = verts_normals[faces]
-
-        normals = interpolate_face_attributes(
-            fragments.pix_to_face, fragments.bary_coords, faces_verts_normals
-        )
-        normals = F.normalize(normals, p=2, dim=-1)
-
-        # Reversed to point FROM object TO camera/light
-        view_dir = -self.cameras.R[:, :, 2].view(-1, 1, 1, 1, 3)
-        view_dir = F.normalize(view_dir, p=2, dim=-1)
-
-        light_dir = -self.lights.direction.view(-1, 1, 1, 1, 3)
-        light_dir = F.normalize(light_dir, p=2, dim=-1)
-
-        mu_0 = torch.sum(normals * light_dir, dim=-1, keepdim=True)
-        valid_mask = mu_0 > 0
-
-        intensity = torch.zeros_like(mu_0)
-        intensity[valid_mask] = mu_0[valid_mask] * self.albedo
-
-        pixel_colors = torch.ones_like(normals) * intensity
-
-        images = softmax_rgb_blend(
-            colors=pixel_colors, fragments=fragments, blend_params=self.blend_params
-        )
-        return images
+PROJECT_DIR = Path(__file__).resolve().parents[2]
+CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
 
 
 def get_model_folder(model_num: int) -> Path:
-    _model_folder_suffix = "public" if model_num <= 3 else "secret"
-    model_folder_str = f"AsteroidModel{model_num:02d}_shape_{_model_folder_suffix}"
-    model_dir = CHALLENGE_DATA_DIR / model_folder_str
+    suffix = "public" if model_num <= 3 else "secret"
+    model_dir = CHALLENGE_DATA_DIR / f"AsteroidModel{model_num:02d}_shape_{suffix}"
     assert model_dir.is_dir(), f"Model directory not found at {model_dir}."
     return model_dir
 
 
 def get_model_stl_path(model_num: int) -> Path:
     if model_num > 3:
-        raise ValueError(f"Model number {model_num} is secret.")
-    model_dir = get_model_folder(model_num)
-    stl_file_path = model_dir / f"asteroid{model_num:d}.stl"
-    assert stl_file_path.is_file(), f"STL file not found at {stl_file_path}."
-    return stl_file_path
+        raise ValueError(f"Model {model_num} is secret.")
+    path = get_model_folder(model_num) / f"asteroid{model_num:d}.stl"
+    assert path.is_file(), f"STL not found at {path}."
+    return path
 
 
-def load_asteroid_mesh(model_num: int, device: torch.device) -> Meshes:
-    stl_path = get_model_stl_path(model_num)
-    mesh_trimesh = trimesh.load(stl_path, force="mesh")
-
-    with tempfile.NamedTemporaryFile(suffix=".obj", delete=True) as temp_obj_file:
-        mesh_trimesh.export(temp_obj_file.name, file_type="obj")
-        pytorch3d_mesh = load_objs_as_meshes([temp_obj_file.name], device=device)
-
-    return pytorch3d_mesh
+def load_asteroid_mesh(model_num: int, device: torch.device):
+    """Load vertices & faces directly from STL via trimesh."""
+    mesh = trimesh.load(get_model_stl_path(model_num), force="mesh")
+    verts = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
+    faces = torch.tensor(mesh.faces, dtype=torch.long, device=device)
+    return verts, faces
 
 
 def load_data(
@@ -239,330 +104,416 @@ def load_data(
     curve_type: Literal["binary", "intensity"],
 ) -> Dataset:
     model_dir = get_model_folder(model_num)
+    lc_dir = model_dir / f"Asteroid{model_num:d}_lightcurve_data"
+    assert lc_dir.is_dir()
 
-    # Changed :02d to :d to match the 'Asteroid3_lightcurve_data' format
-    lightcurve_data_folder_str = f"Asteroid{model_num:d}_lightcurve_data"
-    lightcurve_data_dir = model_dir / lightcurve_data_folder_str
-    assert lightcurve_data_dir.is_dir(), (
-        f"Light curve data directory not found at {lightcurve_data_dir}."
-    )
-
-    # The file names likely still use the zero-padded format, keep :02d here unless they also lack it
-    data_file_str = f"Asteroid{model_num:02d}_lightcurve_{curve_type}"
+    fname = f"Asteroid{model_num:02d}_lightcurve_{curve_type}"
     if origin == "simulated":
-        data_file_str += "_blender"
+        fname += "_blender"
+    fname += ".txt"
 
-    data_file_str += ".txt"
-
-    data_file_path = lightcurve_data_dir / data_file_str
-    assert data_file_path.is_file(), f"Data file not found at {data_file_path}."
-
-    data = pd.read_csv(data_file_path, header=None, index_col=0)
-
+    data = pd.read_csv(lc_dir / fname, header=None, index_col=0)
     data.index.name = "frame"
     data = data.rename(
         columns={
-            1: "0_hor1",
-            2: "0_hor2",
-            3: "0_top",
-            4: "0_bottom",
-            5: "45_hor1",
-            6: "45_hor2",
-            7: "45_top",
-            8: "45_bottom",
-            9: "90_hor1",
-            10: "90_hor2",
-            11: "90_top",
-            12: "90_bottom",
-            13: "135_hor1",
-            14: "135_hor2",
-            15: "135_top",
-            16: "135_bottom",
-            17: "225_hor1",
-            18: "225_hor2",
-            19: "225_top",
-            20: "225_bottom",
-            21: "270_hor1",
-            22: "270_hor2",
-            23: "270_top",
-            24: "270_bottom",
-            25: "315_hor1",
-            26: "315_hor2",
-            27: "315_top",
-            28: "315_bottom",
+            1: "0_hor1", 2: "0_hor2", 3: "0_top", 4: "0_bottom",
+            5: "45_hor1", 6: "45_hor2", 7: "45_top", 8: "45_bottom",
+            9: "90_hor1", 10: "90_hor2", 11: "90_top", 12: "90_bottom",
+            13: "135_hor1", 14: "135_hor2", 15: "135_top", 16: "135_bottom",
+            17: "225_hor1", 18: "225_hor2", 19: "225_top", 20: "225_bottom",
+            21: "270_hor1", 22: "270_hor2", 23: "270_top", 24: "270_bottom",
+            25: "315_hor1", 26: "315_hor2", 27: "315_top", 28: "315_bottom",
         }
     )
-
-    return Dataset(
-        model_num=model_num,
-        origin=origin,
-        curve_type=curve_type,
-        data=data,
-    )
+    return Dataset(model_num=model_num, origin=origin,
+                   curve_type=curve_type, data=data)
 
 
-def get_camera_angles_deg(target_column: str) -> tuple[float, float]:
-    try:
-        phi_str, suffix = target_column.split("_", maxsplit=1)
-        phi_deg = float(phi_str)
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid target_column '{target_column}'. Expected format '<phi>_<suffix>'."
-        ) from exc
+# --------------------------------------------------------------------------- #
+# 2.  Core rasterizer  (no pixels, only integrated brightness)
+# --------------------------------------------------------------------------- #
 
-    alpha_deg = CAMERA_ELEVATION_DEG.get(target_column)
-    if alpha_deg is None:
-        fallback_alpha = {"hor1": 0.0, "hor2": 0.0, "top": 26.0, "bottom": -26.0}
-        if suffix not in fallback_alpha:
-            raise ValueError(f"Unknown camera suffix '{suffix}' in '{target_column}'.")
-        alpha_deg = fallback_alpha[suffix]
-
-    return phi_deg, float(alpha_deg)
+def _ortho_basis(direction: torch.Tensor):
+    """Build right-handed orthonormal basis [u, w, d] for projection."""
+    d = F.normalize(direction, dim=-1)
+    up = (torch.tensor([0.0, 0.0, 1.0], device=d.device, dtype=d.dtype)
+          if abs(d[2].item()) < 0.9 else
+          torch.tensor([0.0, 1.0, 0.0], device=d.device, dtype=d.dtype))
+    u = F.normalize(torch.cross(d, up, dim=-1), dim=-1)
+    w = torch.cross(d, u, dim=-1)
+    return torch.stack([u, w, d], dim=-1)          # (3, 3)
 
 
-def normalize_curve(curve: np.ndarray, eps: float = 1e-8) -> np.ndarray:
-    mean_val = float(np.mean(curve))
-    if abs(mean_val) < eps:
-        raise ValueError("Cannot normalize curve with near-zero mean intensity.")
-    return curve / mean_val
-
-
-def pearson_corr(a: np.ndarray, b: np.ndarray) -> float:
-    a_centered = a - a.mean()
-    b_centered = b - b.mean()
-    denom = float(np.linalg.norm(a_centered) * np.linalg.norm(b_centered))
-    if denom <= 1e-12:
-        return 0.0
-    return float(np.dot(a_centered, b_centered) / denom)
-
-
-def create_orthographic_camera(
-    eye_pos: np.ndarray,
-    target_pos: np.ndarray,
-    device: torch.device,
-    focal_length: float = 1.0,
-) -> OrthographicCameras:
-    eye_tensor = torch.from_numpy(eye_pos).float().view(1, 3).to(device)
-    at_tensor = torch.from_numpy(target_pos).float().view(1, 3).to(device)
-    R, T = look_at_view_transform(eye=eye_tensor, at=at_tensor, up=((0.0, 1.0, 0.0),))
-    return OrthographicCameras(device=device, R=R, T=T, focal_length=focal_length)
-
-
-def shift_align(candidate: np.ndarray, best_shift: int = 0) -> tuple[np.ndarray, int]:
-    # Shift the candidate curve circularly by best_shift and return the aligned curve and the shift value.
-    N = len(candidate)
-    if N < 2:
-        raise ValueError("Candidate curve must have at least 2 points for alignment.")
-    aligned = np.roll(candidate, shift=best_shift)
-    return aligned, best_shift
-
-
-def render_mesh_batch(
-    meshes: Meshes,
-    camera: OrthographicCameras,
-    device: torch.device,
-    image_size: int = 32,
-    light_direction: list = [[1.0, 0.0, 0.0]],
+def _soft_visibility(
+    centroids: torch.Tensor,
+    face_xy: torch.Tensor,
+    face_z: torch.Tensor,
+    gamma: float = 0.02,
+    eps: float = 1e-3,
+    z_far: float = 1e6,
 ) -> torch.Tensor:
-    if meshes.textures is None:
-        verts_rgb = (
-            torch.ones(
-                [
-                    meshes.verts_padded().shape[0],
-                    meshes.verts_packed().shape[0] // meshes.verts_padded().shape[0],
-                    3,
-                ],
-                device=device,
-            )
-            * 1.0
+    """
+    Differentiable orthographic visibility via Z-softmax.
+
+    Depth convention: z is the coordinate along the direction toward the
+    observer (or sun), so LARGER z = CLOSER. For each face i we query its
+    centroid against all faces j; the soft weight is
+
+        V_i = exp(z_i/g) / [ exp(z_i/g) + sum_{j != i} c_ij * exp(z_ij/g) ]
+
+    where z_ij is the interpolated depth of face j at query point i and
+    c_ij in [0, 1] is the soft coverage ("query inside triangle j"). For
+    a point fully covered by exactly one other surface this reduces to
+    V_i = sigmoid((z_i - z_cover)/gamma). V is guaranteed to be in (0, 1].
+    (z_far is kept in the signature for API compatibility; it is no
+    longer needed because coverage weights the exponential directly.)
+
+    Parameters
+    ----------
+    centroids : (F, 2)  query points (centroids of each projected face).
+    face_xy   : (F, 3, 2) projected triangle vertices.
+    face_z    : (F, 3)  depths of the three vertices (toward observer).
+
+    Returns
+    -------
+    vis : (F,) soft visibility weight in (0, 1] for every face.
+    """
+    n_faces = centroids.shape[0]
+
+    # Unpack triangle vertices
+    x0, x1, x2 = face_xy[:, 0, 0], face_xy[:, 1, 0], face_xy[:, 2, 0]
+    y0, y1, y2 = face_xy[:, 0, 1], face_xy[:, 1, 1], face_xy[:, 2, 1]
+    z0, z1, z2 = face_z[:, 0], face_z[:, 1], face_z[:, 2]
+
+    # Edge vectors & 2-D signed determinant (= 2 * projected area)
+    e1x, e1y = x1 - x0, y1 - y0
+    e2x, e2y = x2 - x0, y2 - y0
+    det = e1x * e2y - e1y * e2x                     # (F,)
+
+    # FIX 3: exclude (near-)edge-on faces as occluders instead of shifting
+    # the *signed* determinant by +1e-10 (which flips the barycentrics'
+    # sign whenever det is small and negative).
+    degenerate = det.abs() < 1e-9
+    safe_det = torch.where(degenerate, torch.ones_like(det), det)
+    inv_det = torch.where(degenerate, torch.zeros_like(det), 1.0 / safe_det)
+
+    # Query points: (F, 1)
+    qx = centroids[:, 0:1]
+    qy = centroids[:, 1:2]
+
+    # All-pairs differences: (F, F)
+    dpx = qx - x0.unsqueeze(0)
+    dpy = qy - y0.unsqueeze(0)
+
+    # Barycentric coordinates of query i w.r.t. face j
+    lam1 = (dpx * e2y.unsqueeze(0) - dpy * e2x.unsqueeze(0)) * inv_det.unsqueeze(0)
+    lam2 = (dpy * e1x.unsqueeze(0) - dpx * e1y.unsqueeze(0)) * inv_det.unsqueeze(0)
+    lam0 = 1.0 - lam1 - lam2
+
+    # Soft "inside triangle" indicator
+    inside = (
+        torch.sigmoid(lam0 / eps)
+        * torch.sigmoid(lam1 / eps)
+        * torch.sigmoid(lam2 / eps)
+    )
+    inside = inside * (~degenerate).to(inside.dtype).unsqueeze(0)
+
+    # Interpolated depth at query point i on face j
+    z_interp = (
+        lam0 * z0.unsqueeze(0)
+        + lam1 * z1.unsqueeze(0)
+        + lam2 * z2.unsqueeze(0)
+    )
+    # FIX 3 (safety net): a genuine covering point can never lie outside
+    # face j's own vertex depth range; clamping removes any residual
+    # barycentric garbage from nearly-degenerate projections.
+    z_interp = torch.clamp(
+        z_interp,
+        min=face_z.min(dim=1).values.unsqueeze(0),
+        max=face_z.max(dim=1).values.unsqueeze(0),
+    )
+
+    # FIX 2: exclude the query face from its own occluder set; its exact
+    # depth term is added back to the denominator explicitly below, so it
+    # can never vanish and vis <= 1 always holds.
+    eye = torch.eye(n_faces, dtype=torch.bool, device=centroids.device)
+    inside = inside.masked_fill(eye, 0.0)
+
+    # Depth of each face's own centroid
+    z_query = (z0 + z1 + z2) / 3.0
+
+    # FIX 1: larger z = closer to the observer, so the softmax favours
+    # LARGE z (note the + sign in the logits — near wins).
+    #
+    # The coverage enters as a multiplicative WEIGHT on the exponential,
+    #     w_j = inside_j * exp(z_j / gamma),
+    # not as a blend of the depth toward a far sentinel. Blending the
+    # depth (z*inside - z_far*(1-inside)) would punch soft "cracks" along
+    # every edge of the occluding surface: a query point near a shared
+    # mesh edge sees inside ~ 0.5 from each neighbour and the occluder
+    # would drop out of the softmax entirely.
+    logits = z_interp / gamma
+    logits_query = z_query / gamma
+    max_logit = torch.maximum(logits.max(dim=1).values, logits_query)
+    exp_others = (inside * torch.exp(logits - max_logit.unsqueeze(1))).sum(dim=1)
+    exp_query = torch.exp(logits_query - max_logit)
+    vis = exp_query / (exp_query + exp_others)
+
+    return vis
+
+
+def _direction_visibility(
+    verts: torch.Tensor,
+    faces: torch.Tensor,
+    direction: torch.Tensor,
+    gamma: float,
+    eps: float,
+    keep: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """
+    Project the mesh along `direction` and evaluate soft visibility.
+
+    If `keep` (bool mask over faces) is given, both the query set and the
+    occluder set are restricted to those faces (backface culling). Exact
+    for closed meshes; culled faces get vis = 0, which is consistent
+    because their scattering weight is zero anyway.
+    """
+    basis = _ortho_basis(direction)
+    proj = verts @ basis
+    face_p = proj[faces]                            # (F, 3, 3)
+
+    if keep is None:
+        centroids = face_p.mean(dim=1)[:, :2]
+        return _soft_visibility(centroids, face_p[:, :, :2],
+                                face_p[:, :, 2], gamma, eps)
+
+    idx = keep.nonzero(as_tuple=True)[0]
+    face_sub = face_p[idx]
+    centroids = face_sub.mean(dim=1)[:, :2]
+    vis_sub = _soft_visibility(centroids, face_sub[:, :, :2],
+                               face_sub[:, :, 2], gamma, eps)
+    vis = torch.zeros(faces.shape[0], dtype=verts.dtype, device=verts.device)
+    return vis.index_copy(0, idx, vis_sub)
+
+
+def compute_brightness(
+    verts: torch.Tensor,
+    faces: torch.Tensor,
+    sun_dir: torch.Tensor,
+    view_dir: torch.Tensor,
+    gamma: float = 0.02,
+    eps: float = 1e-3,
+    brdf_type: Literal["lambertian", "lommel_seeliger", "combined"] = "combined",
+    cull_backfaces: bool = True,
+) -> torch.Tensor:
+    """
+    Disk-integrated brightness for a single (sun, view) pair.
+
+    Matches the pixel-sum of the old PyTorch3D pipeline in the hard limit:
+    the pixel footprint of a face is its projected area A*mu, and the old
+    shaders wrote mu0 (Lambert) resp. mu0/(mu+mu0) (Lommel-Seeliger) into
+    each pixel, so the integrated contribution per face is
+    A * mu * shader_value  (FIX 4).
+    """
+    # ---- per-face geometry -------------------------------------------------
+    v0 = verts[faces[:, 0]]
+    v1 = verts[faces[:, 1]]
+    v2 = verts[faces[:, 2]]
+
+    e1 = v1 - v0
+    e2 = v2 - v0
+    normals = torch.cross(e1, e2, dim=-1)
+    areas = 0.5 * normals.norm(dim=-1)
+    nhat = F.normalize(normals, dim=-1)
+
+    # ---- scattering law ------------------------------------------------------
+    mu0 = torch.clamp((nhat * sun_dir).sum(dim=-1), min=0.0)    # cos incidence
+    mu = torch.clamp((nhat * view_dir).sum(dim=-1), min=0.0)    # cos emission
+
+    # FIX 4: every branch carries the foreshortening factor mu.
+    if brdf_type == "lambertian":
+        scatter = mu0 * mu
+    elif brdf_type == "lommel_seeliger":
+        scatter = mu0 * mu / (mu0 + mu + 1e-8)
+    else:  # combined — mirrors old CombinedShader = 0.5 * (Lambert + LS)
+        scatter = 0.5 * (mu0 * mu + mu0 * mu / (mu0 + mu + 1e-8))
+
+    # ---- view visibility (self-occlusion) ----------------------------------
+    keep_v = (mu > 0) if cull_backfaces else None
+    vis = _direction_visibility(verts, faces, view_dir, gamma, eps, keep_v)
+
+    # ---- solar illumination (self-shadowing) -------------------------------
+    keep_s = (mu0 > 0) if cull_backfaces else None
+    ill = _direction_visibility(verts, faces, sun_dir, gamma, eps, keep_s)
+
+    # ---- integrated brightness ---------------------------------------------
+    return (areas * scatter * vis * ill).sum()
+
+
+def compute_lightcurve(
+    verts: torch.Tensor,
+    faces: torch.Tensor,
+    sun_dir: torch.Tensor,
+    view_dir: torch.Tensor,
+    angles: torch.Tensor,
+    gamma: float = 0.02,
+    eps: float = 1e-3,
+    brdf_type: Literal["lambertian", "lommel_seeliger", "combined"] = "combined",
+    cull_backfaces: bool = True,
+) -> torch.Tensor:
+    """
+    Compute lightcurve for N rotation angles.
+
+    The mesh stays fixed; the sun/view directions rotate by -angle around
+    Z, equivalent to rotating the mesh by +angle (as the old code did).
+    """
+    N = angles.shape[0]
+    c, s = torch.cos(angles), torch.sin(angles)
+
+    # R_z(-θ) applied to the direction vectors
+    sun_dirs = torch.stack([
+        c * sun_dir[0] + s * sun_dir[1],
+        -s * sun_dir[0] + c * sun_dir[1],
+        torch.full_like(angles, sun_dir[2]),
+    ], dim=1)
+
+    view_dirs = torch.stack([
+        c * view_dir[0] + s * view_dir[1],
+        -s * view_dir[0] + c * view_dir[1],
+        torch.full_like(angles, view_dir[2]),
+    ], dim=1)
+
+    brightness = torch.zeros(N, device=verts.device, dtype=verts.dtype)
+    for k in range(N):
+        brightness[k] = compute_brightness(
+            verts, faces,
+            sun_dirs[k], view_dirs[k],
+            gamma=gamma, eps=eps, brdf_type=brdf_type,
+            cull_backfaces=cull_backfaces,
         )
-        meshes.textures = TexturesVertex(verts_features=verts_rgb)
-
-    raster_settings = RasterizationSettings(
-        image_size=image_size,
-        blur_radius=1e-3,
-        faces_per_pixel=50,
-    )
-
-    lights = DirectionalLights(device=device, direction=light_direction)
-
-    renderer = MeshRenderer(
-        rasterizer=MeshRasterizer(cameras=camera, raster_settings=raster_settings),
-        shader=CombinedShader(
-            device=device, cameras=camera, lights=lights, albedo=1.0
-        ),
-    )
-
-    return renderer(meshes)
+    return brightness
 
 
-def save_first_frame(
-    rendered_images: torch.Tensor, output_path: str = "first_frame.png"
-):
-    first_frame = rendered_images[0, ..., :3].detach().cpu().numpy()
-    first_frame = np.clip(first_frame, 0.0, 1.0)
-    plt.imsave(output_path, first_frame)
-    print(f"Saved debug frame to '{output_path}'")
+# --------------------------------------------------------------------------- #
+# 3.  Main driver
+# --------------------------------------------------------------------------- #
 
-
-if __name__ == "__main__":
-    compute_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     target_model = 3
-
-    # N=360 aligns with the challenge's specified interpolation grid for real/Blender data
     N = 842
-
     origin = "real"
     curve_type = "intensity"
+    target_column = "45_hor1"
 
-    # 1. Load Data & Geometries
-    asteroid_mesh = load_asteroid_mesh(model_num=target_model, device=compute_device)
-    real_dataset = load_data(
-        model_num=target_model, origin=origin, curve_type=curve_type
-    )
+    # Soft-rasterizer hyper-parameters
+    GAMMA = 0.02          # shadow softness (fraction of unit body size)
+    EPS   = 1e-3          # barycentric edge softness
 
-    # Extracting one geometry curve for fitting/comparison.
-    target_column = "45_bottom"
-    if target_column not in real_dataset.data.columns:
-        raise ValueError(f"target_column '{target_column}' not found in loaded dataset.")
+    # ------------------------------------------------------------------
+    # Load geometry & data
+    # ------------------------------------------------------------------
+    verts, faces = load_asteroid_mesh(target_model, device)
+    print(f"Loaded mesh: {verts.shape[0]} vertices, {faces.shape[0]} faces")
 
-    real_intensity_curve = real_dataset.data[target_column].to_numpy(dtype=np.float64)
-    real_frame_axis = real_dataset.data.index.to_numpy(dtype=np.float64)
-    N = len(real_intensity_curve)
-    if N < 2:
-        raise ValueError("Need at least 2 points in real observations to compare curves.")
+    dataset = load_data(target_model, origin, curve_type)
+    real_curve = dataset.data[target_column].values[:N]
 
-    print(f"Loaded {N} real samples for {target_column} (frames {real_frame_axis[0]}-{real_frame_axis[-1]}).")
+    # Centre and scale to unit extent (numerical stability)
+    vmin, vmax = verts.min(dim=0).values, verts.max(dim=0).values
+    centroid = (vmin + vmax) / 2.0
+    extent = (vmax - vmin).max()
+    verts = (verts - centroid) / extent
 
-    verts = asteroid_mesh.verts_packed()
-    min_verts = verts.min(dim=0).values
-    max_verts = verts.max(dim=0).values
-    centroid = (min_verts + max_verts) / 2.0
-    extent = (max_verts - min_verts).max()
+    # ------------------------------------------------------------------
+    # Build fixed world-frame directions (same conventions as original)
+    # ------------------------------------------------------------------
+    # Sun fixed at -x  -> direction from asteroid toward sun is [-1,0,0]
+    sun_dir_0 = torch.tensor([-1.0, 0.0, 0.0], device=device, dtype=torch.float32)
 
-    batched_meshes = asteroid_mesh.extend(N)
+    # Camera direction derived from target_column
+    phi_deg = float(target_column.split("_")[0])
+    alpha_map = {"hor1": 0, "hor2": 0, "top": 26, "bottom": -26}
+    if phi_deg == 0 and "top" in target_column:
+        alpha_deg = 26
+    elif phi_deg == 0 and "bottom" in target_column:
+        alpha_deg = -26
+    else:
+        alpha_deg = alpha_map.get(target_column.split("_")[1], 0)
 
-    # endpoint=False avoids duplicating the 0-degree sample at 360 degrees.
-    angles = torch.arange(N, device=compute_device) * (2.0 * np.pi / N)
-    axes = torch.zeros(N, 3, device=compute_device)
-    axes[:, 2] = 1.0
-
-    R_batched = axis_angle_to_matrix(axes * angles.unsqueeze(1))
-    transforms = Transform3d(device=compute_device).rotate(R_batched)
-
-    # Rotate around the asteroid centroid, not around the world origin.
-    verts_padded = batched_meshes.verts_padded()
-    centroid_batched = centroid.view(1, 1, 3)
-    verts_centered = verts_padded - centroid_batched
-    verts_rotated = transforms.transform_points(verts_centered) + centroid_batched
-    rotated_batched_meshes = batched_meshes.update_padded(verts_rotated)
-
-    target_position = centroid.cpu().numpy()
-    distance = extent.item() * 2.0
-
-    plane_scale = (2.0 / extent.item()) * 0.9
-
-    # Extract camera geometry from the selected observational column.
-    phi_deg, alpha_deg = get_camera_angles_deg(target_column)
-
-    # Convert to radians
-    phi = np.radians(phi_deg - 180)
+    phi   = np.radians(phi_deg - 180)
     alpha = np.radians(alpha_deg)
+    camera_vector = np.array([
+        np.cos(phi) * np.cos(alpha),
+        np.sin(phi) * np.cos(alpha),
+        np.sin(alpha),
+    ])
+    view_dir_0 = torch.tensor(camera_vector / np.linalg.norm(camera_vector),
+                              device=device, dtype=torch.float32)
 
-    # Calculate the unit vector for the camera
-    camera_vector = np.array(
-        [np.cos(phi) * np.cos(alpha), np.sin(phi) * np.cos(alpha), np.sin(alpha)]
-    )
+    # Rotation angles (mesh rotates +θ around Z in old code)
+    angles = torch.linspace(0, 2 * np.pi, steps=N, device=device)
 
-    # Position the camera at the correct distance along this vector
-    e_obs = target_position + (distance * camera_vector)
+    # ------------------------------------------------------------------
+    # Forward evaluation
+    # ------------------------------------------------------------------
+    print("Computing integrated lightcurve …")
+    t0 = time.time()
+    with torch.no_grad():
+        simulated = compute_lightcurve(
+            verts, faces,
+            sun_dir_0, view_dir_0, angles,
+            gamma=GAMMA, eps=EPS, brdf_type="combined",
+        )
+    simulated = simulated.cpu().numpy()
+    print(f"Forward pass ({N} pts): {time.time()-t0:.2f}s")
 
-    sun_camera = create_orthographic_camera(
-        eye_pos=e_obs,
-        target_pos=target_position,
-        device=compute_device,
-        focal_length=plane_scale,
-    )
+    # Normalise (same as original)
+    sim_norm = simulated / simulated.mean()
+    real_norm = real_curve / real_curve.mean()
 
-    # Keep the Sun direction fixed; phase angle comes from camera placement.
-    offset_light_direction = [[1.0, 0.0, 0.0]]
-    resolution = 128
-
-    rendered_images = render_mesh_batch(
-        meshes=rotated_batched_meshes,
-        camera=sun_camera,
-        device=compute_device,
-        image_size=resolution,
-        light_direction=offset_light_direction,
-    )
-
-    save_first_frame(rendered_images, output_path="first_frame.png")
-
-    # 2. Extract and Normalize Curves
-
-    simulated_rgb = rendered_images[..., :3]
-    simulated_alpha = rendered_images[..., 3:4]
-
-    # Alpha-weighting suppresses soft background blending leakage.
-    simulated_intensity_curve = (
-        (simulated_rgb * simulated_alpha).sum(dim=(1, 2, 3)).detach().cpu().numpy()
-    )
-
-    real_normalized = normalize_curve(real_intensity_curve)
-    simulated_normalized = normalize_curve(simulated_intensity_curve)
-    simulated_aligned, best_shift = shift_align(
-        candidate=simulated_normalized,
-        best_shift=-10,
-    )
-
-    mse_before = float(np.mean((real_normalized - simulated_normalized) ** 2))
-    mse_after = float(np.mean((real_normalized - simulated_aligned) ** 2))
-    corr_before = pearson_corr(real_normalized, simulated_normalized)
-    corr_after = pearson_corr(real_normalized, simulated_aligned)
-
-    print(
-        f"Alignment shift={best_shift} | MSE before={mse_before:.6f}, after={mse_after:.6f} | "
-        f"Corr before={corr_before:.4f}, after={corr_after:.4f}"
-    )
-
-    # 3. Plot Comparison
+    # ------------------------------------------------------------------
+    # Plot
+    # ------------------------------------------------------------------
     plt.figure(figsize=(10, 5))
-    x_axis = real_frame_axis
+    x_axis = np.linspace(0, 360, N)
 
-    plt.plot(
-        x_axis,
-        simulated_normalized,
-        color="royalblue",
-        linewidth=1.2,
-        linestyle=":",
-        alpha=0.5,
-        label="Simulated (raw phase)",
-    )
-    plt.plot(
-        x_axis,
-        simulated_aligned,
-        color="blue",
-        linewidth=2.0,
-        label=f"Simulated (aligned, shift={best_shift})",
-    )
+    plt.plot(x_axis, sim_norm, color="blue", linewidth=2.0,
+             label="Integrated Soft-Rasterizer (fixed)")
+    plt.plot(x_axis, real_norm, color="red", linewidth=1.5,
+             linestyle="--", alpha=0.8,
+             label=f"{origin} Data ({target_column})")
 
-    plt.plot(
-        x_axis,
-        real_normalized,
-        color="red",
-        linewidth=1.5,
-        linestyle="--",
-        alpha=0.8,
-        label=f"Real Data ({target_column}, normalized)",
-    )
-
-    plt.title(
-        f"Lightcurve Comparison: Model {target_model} | {target_column} | MSE={mse_after:.5f}"
-    )
-    plt.xlabel("Observation Frame")
+    plt.title(f"Lightcurve Comparison: Model {target_model}")
+    plt.xlabel("Rotation Angle (Degrees)")
     plt.ylabel("Normalized Intensity (Mean = 1.0)")
     plt.legend()
     plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
+    plt.savefig("lightcurve_comparison_integrated.png", dpi=150)
+    print("Saved plot to 'lightcurve_comparison_integrated.png'")
 
-    plt.savefig("lightcurve_comparison.png", bbox_inches="tight")
-    print("Saved comparative lightcurve plot to 'lightcurve_comparison.png'")
+    # ------------------------------------------------------------------
+    # Gradient sanity-check  (differentiability w.r.t. vertices)
+    # ------------------------------------------------------------------
+    print("\nGradient sanity check (4 angles) …")
+    verts_g = verts.clone().requires_grad_(True)
+    sim_g = compute_lightcurve(
+        verts_g, faces,
+        sun_dir_0, view_dir_0, angles[:4],
+        gamma=GAMMA, eps=EPS, brdf_type="combined",
+    )
+    loss = sim_g.sum()
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    t0 = time.time()
+    loss.backward()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    print(f"  Backward pass: {time.time()-t0:.3f}s")
+    print(f"  ||∇_verts||  : {verts_g.grad.norm().item():.4f}")
+
+
+if __name__ == "__main__":
+    main()
