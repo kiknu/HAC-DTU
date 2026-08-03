@@ -67,6 +67,7 @@ import torch.nn.functional as F
 import trimesh
 
 torch.set_default_dtype(torch.float32)
+torch.set_float32_matmul_precision('high')
 
 # --------------------------------------------------------------------------- #
 # 1.  Data I/O  (unchanged)
@@ -446,6 +447,250 @@ def compute_lightcurve(
         )
     return brightness
 
+from torch.utils.checkpoint import checkpoint
+
+
+def _ortho_bases(dirs: torch.Tensor) -> torch.Tensor:
+    """Batched version of _ortho_basis: (D, 3) unit dirs -> (D, 3, 3)."""
+    d = F.normalize(dirs, dim=-1)
+    up_z = d.new_tensor([0.0, 0.0, 1.0]).expand_as(d)
+    up_y = d.new_tensor([0.0, 1.0, 0.0]).expand_as(d)
+    up = torch.where((d[:, 2].abs() < 0.9).unsqueeze(-1), up_z, up_y)
+    u = F.normalize(torch.linalg.cross(d, up, dim=-1), dim=-1)
+    w = torch.linalg.cross(d, u, dim=-1)
+    return torch.stack([u, w, d], dim=-1)
+
+
+def _rotate_dirs_z(d0: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
+    """Apply the frame rotation R_z(-psi_k) to fixed world dirs.
+
+    d0: (..., 3), psi: (N,)  ->  (N, ..., 3). Identical formula to the
+    per-frame stack in compute_lightcurve (FIX 5 conventions preserved).
+    """
+    shape = (psi.shape[0],) + (1,) * (d0.dim() - 1)
+    c, s = torch.cos(psi).view(shape), torch.sin(psi).view(shape)
+    x, y, z = d0[..., 0], d0[..., 1], d0[..., 2]
+    xr = c * x + s * y
+    yr = -s * x + c * y
+    return torch.stack([xr, yr, z.expand_as(xr)], dim=-1)
+
+
+def _soft_visibility_batch(face_xy, face_z, gamma, eps, valid=None):
+    """Batched soft visibility. Dims: b = direction, i = query, j = occluder.
+
+    face_xy: (B, K, 3, 2), face_z: (B, K, 3), valid: (B, K) bool or None.
+    Returns (B, K) in (0, 1]. All FIXes 1-3 preserved.
+
+    Note: the softmax is rewritten as V_i = 1 / (1 + sum_j c_ij e^{(z_ij-z_i)/g}),
+    algebraically identical to exp_q/(exp_q+exp_others) but it drops one
+    (B,K,K) reduction (the max trick) and stays finite for tiny gamma via
+    the clamp(max=60) on the exponent (exp(60) ~ 1e26 << fp32 max).
+    """
+    B, K = face_z.shape[:2]
+    x0, x1, x2 = face_xy[..., 0, 0], face_xy[..., 1, 0], face_xy[..., 2, 0]
+    y0, y1, y2 = face_xy[..., 0, 1], face_xy[..., 1, 1], face_xy[..., 2, 1]
+    z0, z1, z2 = face_z[..., 0], face_z[..., 1], face_z[..., 2]
+
+    e1x, e1y = x1 - x0, y1 - y0
+    e2x, e2y = x2 - x0, y2 - y0
+    det = e1x * e2y - e1y * e2x                                    # (B, K)
+
+    degenerate = det.abs() < 1e-9                                  # FIX 3
+    safe_det = torch.where(degenerate, torch.ones_like(det), det)
+    inv_det = torch.where(degenerate, torch.zeros_like(det), 1.0 / safe_det)
+
+    cx, cy = (x0 + x1 + x2) / 3.0, (y0 + y1 + y2) / 3.0            # queries
+
+    dpx = cx.unsqueeze(2) - x0.unsqueeze(1)                        # (B, Kq, Ko)
+    dpy = cy.unsqueeze(2) - y0.unsqueeze(1)
+    lam1 = (dpx * e2y.unsqueeze(1) - dpy * e2x.unsqueeze(1)) * inv_det.unsqueeze(1)
+    lam2 = (dpy * e1x.unsqueeze(1) - dpx * e1y.unsqueeze(1)) * inv_det.unsqueeze(1)
+    lam0 = 1.0 - lam1 - lam2
+
+    inside = (torch.sigmoid(lam0 / eps) * torch.sigmoid(lam1 / eps)
+              * torch.sigmoid(lam2 / eps))
+    occ_ok = ~degenerate
+    if valid is not None:                     # exclude back-facing occluders
+        occ_ok = occ_ok & valid               # (exact for watertight meshes)
+    inside = inside * occ_ok.to(inside.dtype).unsqueeze(1)
+
+    z_interp = (lam0 * z0.unsqueeze(1) + lam1 * z1.unsqueeze(1)
+                + lam2 * z2.unsqueeze(1))
+    z_interp = torch.clamp(z_interp,                               # FIX 3 net
+                           min=face_z.min(dim=-1).values.unsqueeze(1),
+                           max=face_z.max(dim=-1).values.unsqueeze(1))
+
+    eye = torch.eye(K, dtype=torch.bool, device=face_z.device)     # FIX 2
+    inside = inside.masked_fill(eye, 0.0)
+
+    z_query = (z0 + z1 + z2) / 3.0
+    delta = (z_interp - z_query.unsqueeze(2)) / gamma              # FIX 1 sign
+    w = (inside * torch.exp(delta.clamp(max=60.0))).sum(dim=2)
+    return 1.0 / (1.0 + w)
+
+
+def _visibility_chunk(verts, faces, nhat, dirs, gamma, eps, k_keep,
+                      mask_backface_occluders=True, vis_dtype=None):
+    """Soft visibility for a fixed-size chunk of directions -> (B, F).
+
+    Compile-safe replacement for the nonzero()-based culling: keep the
+    k_keep faces with LARGEST mu per direction (topk = static shape).
+    Dropped faces get vis=0; they have mu <= tail-threshold, so their
+    scattering weight is (near-)zero anyway — exact in the same sense as
+    cull_backfaces for closed meshes when k_keep >= #front-facing.
+    """
+    B, n_faces = dirs.shape[0], faces.shape[0]
+    bases = _ortho_bases(dirs)                                     # (B,3,3)
+    proj = torch.einsum('vi,bij->bvj', verts, bases)               # (B,V,3)
+    face_p = proj[:, faces]                                        # (B,F,3,3)
+    mu = torch.einsum('fi,bi->bf', nhat, dirs)                     # (B,F)
+
+    if k_keep is not None and k_keep < n_faces:
+        idx = mu.topk(k_keep, dim=1, sorted=False).indices         # (B,K)
+        face_sub = torch.gather(
+            face_p, 1, idx[:, :, None, None].expand(B, k_keep, 3, 3))
+        mu_sub = torch.gather(mu, 1, idx)
+        if vis_dtype is not None:                                  # optional bf16
+            face_sub = face_sub.to(vis_dtype)
+        valid = (mu_sub > 0.0) if mask_backface_occluders else None
+        vis_sub = _soft_visibility_batch(face_sub[..., :2], face_sub[..., 2],
+                                         gamma, eps, valid)
+        vis_sub = vis_sub.to(verts.dtype) * (mu_sub > 0.0)
+        return proj.new_zeros(B, n_faces).scatter(1, idx, vis_sub)
+
+    fp = face_p.to(vis_dtype) if vis_dtype is not None else face_p
+    valid = (mu > 0.0) if mask_backface_occluders else None
+    vis = _soft_visibility_batch(fp[..., :2], fp[..., 2], gamma, eps, valid)
+    vis = vis.to(verts.dtype)
+    return vis * (mu > 0.0) if mask_backface_occluders else vis
+
+
+_COMPILED_VIS_CHUNK = None
+def _get_compiled_vis_chunk():
+    global _COMPILED_VIS_CHUNK
+    if _COMPILED_VIS_CHUNK is None:
+        _COMPILED_VIS_CHUNK = torch.compile(_visibility_chunk, dynamic=False)
+    return _COMPILED_VIS_CHUNK
+
+
+def visibility_table(verts, faces, nhat, dirs, *, gamma, eps,
+                     cull_frac=0.65, dir_chunk=4,
+                     use_compile=True, use_checkpoint=False,
+                     mask_backface_occluders=True, vis_dtype=None):
+    """(D, 3) directions -> (D, F) soft visibility, chunked over D.
+
+    Chunks are padded to `dir_chunk` so torch.compile sees ONE static shape
+    (single compilation, no recompiles). use_checkpoint=True recomputes each
+    chunk in backward: autograd then never holds more than one chunk's
+    (B,K,K) intermediates — essential for gradient-based reconstruction.
+    """
+    D, n_faces = dirs.shape[0], faces.shape[0]
+    k_keep = None if cull_frac is None else min(n_faces, int(cull_frac * n_faces))
+    fn = _get_compiled_vis_chunk() if use_compile else _visibility_chunk
+    outs = []
+    for i in range(0, D, dir_chunk):
+        d = dirs[i:i + dir_chunk]
+        n_real = d.shape[0]
+        if n_real < dir_chunk:                                     # pad last
+            d = torch.cat([d, d[-1:].expand(dir_chunk - n_real, -1)], dim=0)
+        args = (verts, faces, nhat, d, gamma, eps, k_keep,
+                mask_backface_occluders, vis_dtype)
+        v = (checkpoint(fn, *args, use_reentrant=False)
+             if use_checkpoint else fn(*args))
+        outs.append(v[:n_real])
+    return torch.cat(outs, dim=0)
+
+
+def _integrate_chunk(areas, nhat, sun_dirs, view_dirs, vis_table,
+                     inv_sun, inv_view, brdf_type):
+    """Photometric contraction for a chunk of frames -> (n, C)."""
+    ill = vis_table[inv_sun]                                        # (n, F)
+    vis = vis_table[inv_view]                                       # (n, C, F)
+    mu0 = torch.einsum('fi,ni->nf', nhat, sun_dirs).clamp_min(0.0)
+    mu = torch.einsum('fi,nci->ncf', nhat, view_dirs).clamp_min(0.0)
+    l = mu0[:, None, :] * mu                                        # FIX 4
+    if brdf_type == "lambertian":
+        scatter = l
+    elif brdf_type == "lommel_seeliger":
+        scatter = l / (mu0[:, None, :] + mu + 1e-8)
+    else:                                                           # combined
+        scatter = 0.5 * l * (1.0 + 1.0 / (mu0[:, None, :] + mu + 1e-8))
+    return torch.einsum('ncf,nf->nc', scatter * vis, areas[None, :] * ill)
+
+
+def compute_lightcurves_multicam(
+    verts, faces, sun_dir0, view_dirs0, angles, *,
+    gamma=0.02, eps=1e-3, brdf_type="combined",
+    rotation_sign=-1.0, phase_offset=0.0,
+    cull_frac=0.65, dir_chunk=4, frame_chunk=60,
+    use_compile=True, use_checkpoint=False,
+    dedupe_tol=1e-4, vis_dtype=None, verbose=False,
+):
+    """Lightcurves for ALL cameras at once. Returns (N, C).
+
+    sun_dir0: (3,), view_dirs0: (C, 3) world-frame unit dirs, angles: (N,).
+    Directions are deduped after quantisation to ~0.006 deg: on the 360-frame
+    grid all curves collapse onto 3 elevation rings (~1080 unique O(F^2)
+    passes for 28 cameras instead of 10440).
+    """
+    N, C = angles.shape[0], view_dirs0.shape[0]
+
+    # Per-face geometry: shared by every frame and camera.
+    v0, v1, v2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
+    normals = torch.cross(v1 - v0, v2 - v0, dim=-1)
+    areas = 0.5 * normals.norm(dim=-1)
+    nhat = F.normalize(normals, dim=-1)
+
+    # Body-frame directions for every (frame, camera).  (FIX 5 conventions.)
+    psi = rotation_sign * angles + phase_offset
+    sun_dirs = _rotate_dirs_z(sun_dir0, psi)                        # (N, 3)
+    view_dirs = _rotate_dirs_z(view_dirs0, psi)                     # (N, C, 3)
+
+    # Dedupe: sun pass shared by all cameras + ring coincidences.
+    all_dirs = torch.cat([sun_dirs, view_dirs.reshape(-1, 3)], dim=0)
+    key = torch.round(all_dirs / dedupe_tol)
+    uniq_key, inv = torch.unique(key, dim=0, return_inverse=True)
+    uniq_dirs = F.normalize(uniq_key * dedupe_tol, dim=-1)
+    if verbose:
+        print(f"visibility passes: {uniq_key.shape[0]} unique "
+              f"of {all_dirs.shape[0]} (frame,dir) pairs")
+
+    table = visibility_table(
+        verts, faces, nhat, uniq_dirs, gamma=gamma, eps=eps,
+        cull_frac=cull_frac, dir_chunk=dir_chunk, use_compile=use_compile,
+        use_checkpoint=use_checkpoint, vis_dtype=vis_dtype)         # (U, F)
+
+    inv_sun, inv_view = inv[:N], inv[N:].reshape(N, C)
+    out = []
+    for i in range(0, N, frame_chunk):                              # (N,C,F) never
+        args = (areas, nhat, sun_dirs[i:i + frame_chunk],           #  materialised
+                view_dirs[i:i + frame_chunk], table,
+                inv_sun[i:i + frame_chunk], inv_view[i:i + frame_chunk],
+                brdf_type)
+        out.append(checkpoint(_integrate_chunk, *args, use_reentrant=False)
+                   if use_checkpoint else _integrate_chunk(*args))
+    return torch.cat(out, dim=0)                                    # (N, C)
+
+
+CAMERA_ALPHA_DEG = {"hor1": 0.0, "hor2": 0.0, "top": 26.0, "bottom": -26.0}
+
+def build_view_dirs(columns, device):
+    """Column names ('45_top', ...) -> (C, 3) world-frame view directions."""
+    dirs = []
+    for col in columns:
+        az, kind = col.split("_")
+        phi, alpha = np.radians(float(az) - 180.0), np.radians(CAMERA_ALPHA_DEG[kind])
+        dirs.append([np.cos(phi) * np.cos(alpha),
+                     np.sin(phi) * np.cos(alpha), np.sin(alpha)])
+    return F.normalize(torch.tensor(np.array(dirs), dtype=torch.float32,
+                                    device=device), dim=-1)
+
+
+@torch.no_grad()
+def max_frontface_frac(nhat, dirs):
+    """Run once per mesh to choose cull_frac (add ~0.05 margin)."""
+    mu = torch.einsum('fi,di->df', nhat, dirs)
+    return (mu > 0).float().mean(dim=1).max().item()
 
 # --------------------------------------------------------------------------- #
 # 3.  Main driver
@@ -568,6 +813,100 @@ def main():
     print(f"  Backward pass: {time.time()-t0:.3f}s")
     print(f"  ||∇_verts||  : {verts_g.grad.norm().item():.4f}")
 
+from torch.func import jvp, vmap
+
+def jacobian_fwd(fn, p, chunk=8):
+    """J[m, i] = d r_m / d p_i via chunked forward-mode. Returns (M, n)."""
+    n = p.numel()
+    I = torch.eye(n, device=p.device, dtype=p.dtype)
+    blocks = []
+    for i in range(0, n, chunk):
+        tangents = I[i:i + chunk]
+        # vmap over tangents; fall back to a Python loop if vmap chokes
+        Jc = vmap(lambda v: jvp(fn, (p,), (v,))[1])(tangents)   # (c, M)
+        blocks.append(Jc)
+    return torch.cat(blocks).T.contiguous()
+
+def main_multicam():
+    device = torch.device("cuda")
+    verts, faces = load_asteroid_mesh(3, device)
+    vmin, vmax = verts.min(0).values, verts.max(0).values
+    verts = (verts - (vmin + vmax) / 2) / (vmax - vmin).max()
+
+    dataset = load_data(3, "simulated", "intensity")
+    cols = list(dataset.data.columns)                      # all 28
+    view_dirs0 = build_view_dirs(cols, device)
+    sun_dir0 = torch.tensor([-1.0, 0.0, 0.0], device=device)
+    N = 360                                                # Blender grid!
+    angles = torch.arange(N, device=device) * (2 * np.pi / N)
+
+    torch.cuda.reset_peak_memory_stats()
+    with torch.no_grad():
+        lcs = compute_lightcurves_multicam(verts, faces, sun_dir0, view_dirs0,
+                                           angles, verbose=True)   # warm-up = compile
+        torch.cuda.synchronize(); t0 = time.time()
+        lcs = compute_lightcurves_multicam(verts, faces, sun_dir0, view_dirs0, angles)
+        torch.cuda.synchronize()
+    print(f"forward: {time.time()-t0:.2f}s, "
+          f"peak mem: {torch.cuda.max_memory_allocated()/1e9:.2f} GB")
+    lcs = lcs / lcs.mean(dim=0, keepdim=True)              # per-curve normalisation
 
 if __name__ == "__main__":
-    main()
+    main_multicam()
+    
+    
+    # ---- template & parameterization -----------------------------------------
+    sphere = trimesh.creation.icosphere(subdivisions=3)          # 642 v, 1280 f
+    dirs_t  = F.normalize(torch.tensor(sphere.vertices, dtype=torch.float32,
+                                    device=dev), dim=-1)      # (n, 3)
+    faces_t = torch.tensor(sphere.faces, device=dev)
+    n = dirs_t.shape[0]
+
+    E = torch.tensor(sphere.edges_unique, device=dev)            # graph Laplacian
+    Lap = torch.zeros(n, n, device=dev)
+    Lap[E[:, 0], E[:, 1]] = -1.0; Lap[E[:, 1], E[:, 0]] = -1.0
+    Lap += torch.diag(-Lap.sum(dim=1))
+
+    def verts_from(p):                       # p = log-radii, r > 0 guaranteed
+        return 0.5 * torch.exp(p).unsqueeze(1) * dirs_t
+
+    def residuals(p, gamma):
+        B = compute_lightcurves_multicam(
+            verts_from(p), faces_t, sun_dir0, view_dirs0, angles,
+            gamma=gamma, eps=1e-3, use_compile=False, use_checkpoint=False,
+            dir_chunk=4)
+        model = B / B.mean(dim=0, keepdim=True)
+        r_photo = ((model - data_360) * w_curve).reshape(-1)     # w: 1/sigma per curve
+        r_lap   = lam_lap * (Lap @ p)                            # smooth log-radius
+        r_scale = lam_g * (p.mean().unsqueeze(0))                # pin mean size
+        return torch.cat([r_photo, r_lap, r_scale])
+
+    # ---- Levenberg–Marquardt ---------------------------------------------------
+    def lm_fit(p, gamma, iters=25, lam=1e-2):
+        fn = lambda q: residuals(q, gamma)
+        with torch.no_grad():
+            r = fn(p); cost = 0.5 * (r @ r).item()
+        for it in range(iters):
+            J = jacobian_fwd(fn, p, chunk=8)                     # (M, n)
+            J64, r64 = J.double(), r.double()
+            JtJ, Jtr = J64.T @ J64, J64.T @ r64                  # fp64: GN squares cond(J)
+            dscale = JtJ.diagonal().clamp_min(1e-8 * JtJ.diagonal().max())
+            while True:                                          # damping retries reuse J
+                delta = torch.linalg.solve(JtJ + lam * torch.diag(dscale), -Jtr)
+                with torch.no_grad():
+                    r_new = fn(p + delta.float())
+                    cost_new = 0.5 * (r_new @ r_new).item()
+                pred = 0.5 * (delta @ (lam * dscale * delta - Jtr)).item()
+                rho = (cost - cost_new) / max(pred, 1e-30)
+                if rho > 1e-3:
+                    p = p + delta.float(); r, cost = r_new, cost_new
+                    lam = max(lam * max(1/3, 1 - (2*rho - 1)**3), 1e-10); break
+                lam *= 3.0
+                if lam > 1e8: return p                           # stalled
+            print(f"[{it}] chi2={2*cost:.5g} lam={lam:.2e} |step|={delta.norm():.2e}")
+            if delta.norm() < 1e-6 * p.norm(): break
+        return p
+
+    p = torch.zeros(n, device=dev)                               # unit sphere init
+    for g in (0.05, 0.02, 0.01):                                 # gamma annealing
+        p = lm_fit(p, gamma=g)
