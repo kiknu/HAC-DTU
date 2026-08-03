@@ -38,6 +38,15 @@ FIX 4 (foreshortening factor mu = cos_v in the scattering law)
     LambertianOrthographicShader / LommelSeeligerOrthographicShader whose
     pixel values were mu0 and mu0/(mu+mu0) respectively.)
 
+FIX 5 (rotation direction / phase)
+    The old pipeline passed column-vector matrices from
+    `axis_angle_to_matrix` into `Transform3d.rotate`, which applies
+    matrices to row vectors — so it actually rotated the mesh by -theta.
+    `compute_lightcurve` now exposes `rotation_sign` (default -1,
+    matching the old pipeline's real behaviour) and `phase_offset`
+    (the arbitrary common start point of the aligned challenge curves).
+    Fit both with evaluate_forward_model.py.
+
 Also: optional backface culling (`cull_backfaces=True`) cuts both passes
 to roughly the front half of the faces — ~4x less memory/compute for the
 O(F^2) visibility matrix. Exact for closed (watertight) meshes, which the
@@ -134,13 +143,17 @@ def load_data(
 # --------------------------------------------------------------------------- #
 
 def _ortho_basis(direction: torch.Tensor):
-    """Build right-handed orthonormal basis [u, w, d] for projection."""
+    """Build right-handed orthonormal basis [u, w, d] for projection.
+
+    Written with pure tensor ops (no .item() / Python branching) so that
+    torch.compile can capture it without graph breaks.
+    """
     d = F.normalize(direction, dim=-1)
-    up = (torch.tensor([0.0, 0.0, 1.0], device=d.device, dtype=d.dtype)
-          if abs(d[2].item()) < 0.9 else
-          torch.tensor([0.0, 1.0, 0.0], device=d.device, dtype=d.dtype))
-    u = F.normalize(torch.cross(d, up, dim=-1), dim=-1)
-    w = torch.cross(d, u, dim=-1)
+    up_z = d.new_tensor([0.0, 0.0, 1.0])
+    up_y = d.new_tensor([0.0, 1.0, 0.0])
+    up = torch.where(d[2].abs() < 0.9, up_z, up_y)
+    u = F.normalize(torch.linalg.cross(d, up, dim=-1), dim=-1)
+    w = torch.linalg.cross(d, u, dim=-1)
     return torch.stack([u, w, d], dim=-1)          # (3, 3)
 
 
@@ -350,6 +363,17 @@ def compute_brightness(
     return (areas * scatter * vis * ill).sum()
 
 
+# Cache for the torch.compile'd brightness function (built lazily).
+_COMPILED_BRIGHTNESS = None
+
+
+def _get_compiled_brightness():
+    global _COMPILED_BRIGHTNESS
+    if _COMPILED_BRIGHTNESS is None:
+        _COMPILED_BRIGHTNESS = torch.compile(compute_brightness, dynamic=False)
+    return _COMPILED_BRIGHTNESS
+
+
 def compute_lightcurve(
     verts: torch.Tensor,
     faces: torch.Tensor,
@@ -360,36 +384,65 @@ def compute_lightcurve(
     eps: float = 1e-3,
     brdf_type: Literal["lambertian", "lommel_seeliger", "combined"] = "combined",
     cull_backfaces: bool = True,
+    rotation_sign: float = -1.0,
+    phase_offset: float = 0.0,
+    use_compile: bool = False,
 ) -> torch.Tensor:
     """
     Compute lightcurve for N rotation angles.
 
-    The mesh stays fixed; the sun/view directions rotate by -angle around
-    Z, equivalent to rotating the mesh by +angle (as the old code did).
+    Frame k corresponds to the MESH rotated by
+
+        psi_k = rotation_sign * angles[k] + phase_offset      (about +z),
+
+    implemented by rotating the sun/view directions by R_z(-psi_k).
+
+    FIX 5 (rotation_sign default = -1): the old PyTorch3D pipeline fed
+    column-vector matrices from `axis_angle_to_matrix` into
+    `Transform3d.rotate`, which applies matrices to ROW vectors
+    (points @ R = R^T points). It therefore actually rotated the mesh by
+    -theta, not +theta. rotation_sign=-1 reproduces that behaviour;
+    rotation_sign=+1 reproduces this file's previous (opposite) spin.
+    `phase_offset` absorbs the arbitrary common start point the challenge
+    organisers chose when aligning the measured curves. Fit both with
+    evaluate_forward_model.py, then hard-code them here.
+
+    use_compile=True routes each brightness evaluation through
+    torch.compile (forces cull_backfaces=False internally: culling
+    produces data-dependent shapes, which break compilation). First call
+    pays a one-off compilation cost; subsequent calls are fused kernels.
     """
     N = angles.shape[0]
-    c, s = torch.cos(angles), torch.sin(angles)
+    psi = rotation_sign * angles + phase_offset
+    c, s = torch.cos(psi), torch.sin(psi)
 
-    # R_z(-θ) applied to the direction vectors
+    # R_z(-psi) applied to the direction vectors
     sun_dirs = torch.stack([
         c * sun_dir[0] + s * sun_dir[1],
         -s * sun_dir[0] + c * sun_dir[1],
-        torch.full_like(angles, sun_dir[2]),
+        torch.full_like(psi, sun_dir[2]),
     ], dim=1)
 
     view_dirs = torch.stack([
         c * view_dir[0] + s * view_dir[1],
         -s * view_dir[0] + c * view_dir[1],
-        torch.full_like(angles, view_dir[2]),
+        torch.full_like(psi, view_dir[2]),
     ], dim=1)
+
+    if use_compile:
+        fn = _get_compiled_brightness()
+        cull = False
+    else:
+        fn = compute_brightness
+        cull = cull_backfaces
 
     brightness = torch.zeros(N, device=verts.device, dtype=verts.dtype)
     for k in range(N):
-        brightness[k] = compute_brightness(
+        brightness[k] = fn(
             verts, faces,
             sun_dirs[k], view_dirs[k],
             gamma=gamma, eps=eps, brdf_type=brdf_type,
-            cull_backfaces=cull_backfaces,
+            cull_backfaces=cull,
         )
     return brightness
 
@@ -451,8 +504,9 @@ def main():
     view_dir_0 = torch.tensor(camera_vector / np.linalg.norm(camera_vector),
                               device=device, dtype=torch.float32)
 
-    # Rotation angles (mesh rotates +θ around Z in old code)
-    angles = torch.linspace(0, 2 * np.pi, steps=N, device=device)
+    # Rotation angles: one full rotation, endpoint EXCLUDED (linspace with
+    # both endpoints would make frame N-1 duplicate frame 0).
+    angles = torch.arange(N, device=device) * (2 * np.pi / N)
 
     # ------------------------------------------------------------------
     # Forward evaluation
