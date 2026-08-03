@@ -568,6 +568,18 @@ def test_fit(model_num=1, n_frames=840, fit_stride=3, noise=0.01,
     p, hist = solve(fitter, p0)
     print(f"[test] solve time {time.time()-t0:.1f}s")
 
+    from visualize_fit import visualize_fit
+    viz = visualize_fit(fitter, p0, p, reference=(v_dat_t, f_dat_t),
+                        ref_label=f"star proxy (model {model_num})",
+                        out_prefix="gn_fit")
+    # optionally: reference=(verts_gt, faces_gt) to include star-approx error
+    # return dict(p=p, p0=p0, history=hist, fitter=fitter, report=report,
+    #             reference=(v_dat_t, f_dat_t), viz=viz)
+
+    from visualize_fit import evolution_gif
+    evolution_gif(fitter, [h["p"] for h in hist if "p" in h],
+                  reference=(v_dat_t, f_dat_t), out_gif="gn_fit_evolution.gif")
+
     # ---- metrics vs. the star-shaped target ---------------------------------
     dirs_np = fitter.dirs_t.cpu().numpy().astype(np.float64)
     r_gt = radial_field(v_dat_t, f_dat_t, fitter.dirs_t).cpu().numpy()
