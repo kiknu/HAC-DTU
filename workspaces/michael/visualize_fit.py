@@ -93,6 +93,58 @@ def fibonacci_dirs(n, device):
 
 
 # ---------------------------------------------------------------------------
+# Otsu thresholding (dependency-free)
+# ---------------------------------------------------------------------------
+
+def _otsu_column(x, bins=256):
+    """Otsu threshold for a single 1-D signal."""
+    x = np.asarray(x, dtype=np.float64)
+    lo, hi = x.min(), x.max()
+    if hi <= lo:
+        return lo
+    hist, edges = np.histogram(x, bins=bins, range=(lo, hi))
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    total_weight = hist.sum()
+    total_sum = (hist * centers).sum()
+    weight_bg = 0.0
+    sum_bg = 0.0
+    max_var = -1.0
+    best_thresh = centers[0]
+    for i in range(len(hist)):
+        weight_bg += hist[i]
+        if weight_bg == 0:
+            continue
+        weight_fg = total_weight - weight_bg
+        if weight_fg == 0:
+            break
+        sum_bg += hist[i] * centers[i]
+        mean_bg = sum_bg / weight_bg
+        mean_fg = (total_sum - sum_bg) / weight_fg
+        between_var = weight_bg * weight_fg * (mean_bg - mean_fg) ** 2
+        if between_var > max_var:
+            max_var = between_var
+            best_thresh = centers[i]
+    return best_thresh
+
+
+def otsu_threshold(data):
+    """Per-column Otsu thresholds for (N, C) data. Returns (C,) numpy array."""
+    data = np.asarray(data)
+    if data.ndim == 1:
+        return np.array([_otsu_column(data)])
+    return np.array([_otsu_column(data[:, c]) for c in range(data.shape[1])])
+
+
+def apply_otsu(data):
+    """Return binary array (same shape) where value > per-column Otsu threshold."""
+    data = np.asarray(data)
+    thresh = otsu_threshold(data)
+    if data.ndim == 1:
+        return (data > thresh[0]).astype(np.uint8)
+    return (data > thresh.reshape(1, -1)).astype(np.uint8)
+
+
+# ---------------------------------------------------------------------------
 # matplotlib 3D rendering
 # ---------------------------------------------------------------------------
 
@@ -213,6 +265,132 @@ def plot_sections(meshes_t, labels, errs_pct, out_png, n=721):
 
 
 # ---------------------------------------------------------------------------
+# lightcurve grids
+# ---------------------------------------------------------------------------
+
+def _parse_columns(columns):
+    """Return (azimuths, kinds) from column names like '0_hor1', '45_top'."""
+    azimuths = []
+    kinds = []
+    for col in columns:
+        parts = str(col).split("_")
+        azimuths.append(parts[0])
+        kinds.append("_".join(parts[1:]))
+    return azimuths, kinds
+
+
+def plot_lightcurve_grid(
+    data,
+    model,
+    angles,
+    columns,
+    out_png,
+    title="",
+    binary=False,
+    row_kinds=("hor1", "top", "bottom"),
+    col_azimuths=("0", "45", "90", "135", "225", "270", "315"),
+):
+    """
+    3-row x 7-column grid of lightcurves.
+
+    Rows are camera kinds, columns are azimuths.  Intensity plots show data
+    as black dots and model as a red line.  Binary plots threshold both data
+    and model with Otsu's method and draw them as step functions.
+    """
+    data = np.asarray(data)
+    model = np.asarray(model)
+    angles = np.asarray(angles)
+    if angles.max() > 2 * math.pi + 1:
+        angles = np.radians(angles)
+    x = np.degrees(angles)
+
+    if binary:
+        data = apply_otsu(data)
+        model = apply_otsu(model)
+
+    n_rows, n_cols = len(row_kinds), len(col_azimuths)
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(2.5 * n_cols, 1.9 * n_rows), sharex=True, sharey=True
+    )
+    if n_rows == 1:
+        axes = axes.reshape(1, -1)
+
+    for r, kind in enumerate(row_kinds):
+        axes[r, 0].set_ylabel("binary" if binary else "norm. flux", fontsize=8)
+        for c, az in enumerate(col_azimuths):
+            ax = axes[r, c]
+            col_name = f"{az}_{kind}"
+            if col_name not in columns:
+                ax.set_visible(False)
+                continue
+            ci = list(columns).index(col_name)
+            if binary:
+                ax.plot(x, data[:, ci], "k|", ms=4, alpha=0.6, label="data")
+                ax.step(
+                    x,
+                    model[:, ci],
+                    where="mid",
+                    color="crimson",
+                    lw=1.2,
+                    alpha=0.85,
+                    label="fit",
+                )
+                ax.set_ylim(-0.15, 1.15)
+                ax.set_yticks([0, 1])
+            else:
+                ax.plot(x, data[:, ci], "k.", ms=1.5, alpha=0.5, label="data")
+                ax.plot(x, model[:, ci], "r-", lw=0.9, alpha=0.9, label="fit")
+                lo = min(data[:, ci].min(), model[:, ci].min())
+                hi = max(data[:, ci].max(), model[:, ci].max())
+                pad = 0.05 * max(abs(lo), abs(hi), 1e-6)
+                ax.set_ylim(lo - pad, hi + pad)
+            ax.grid(alpha=0.25)
+            if r == 0:
+                ax.set_title(f"{az}°", fontsize=9)
+            if r == n_rows - 1:
+                ax.set_xlabel("rot. angle [deg]", fontsize=7)
+
+    fig.suptitle(title, fontsize=11)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(out_png, dpi=150)
+    plt.close(fig)
+
+
+def plot_intensity_and_binary_grids(
+    data,
+    model,
+    angles,
+    columns,
+    prefix="gn_fit",
+    row_kinds=("hor1", "top", "bottom"),
+    col_azimuths=("0", "45", "90", "135", "225", "270", "315"),
+):
+    """Convenience wrapper producing both intensity and Otsu-binary grids."""
+    plot_lightcurve_grid(
+        data,
+        model,
+        angles,
+        columns,
+        f"{prefix}_intensity_grid.png",
+        title="Intensity lightcurves (data •  fit —)",
+        binary=False,
+        row_kinds=row_kinds,
+        col_azimuths=col_azimuths,
+    )
+    plot_lightcurve_grid(
+        data,
+        model,
+        angles,
+        columns,
+        f"{prefix}_binary_grid.png",
+        title="Binary lightcurves from Otsu (data |  fit —)",
+        binary=True,
+        row_kinds=row_kinds,
+        col_azimuths=col_azimuths,
+    )
+
+
+# ---------------------------------------------------------------------------
 # interactive exports
 # ---------------------------------------------------------------------------
 
@@ -291,6 +469,72 @@ def evolution_gif(fitter, p_seq, reference, out_gif="fit_evolution.gif",
         r = fitter.r0 * torch.exp(pp.detach())
         s = torch.exp(torch.mean(torch.log(r_ref) - torch.log(r)))
         v = _to_np((s * r)[:, None] * fitter.dirs_t)
+        e = _to_np(torch.log(s * r) - torch.log(r_ref))
+        frames.append((v, e[faces].mean(1)))
+    vmax = max(1e-3, np.percentile(np.abs(np.stack([e for _, e in frames])), 99))
+    lim = 1.08 * max(np.abs(v).max() for v, _ in frames)
+    fig = plt.figure(figsize=(4.2, 4.2))
+    ax = fig.add_subplot(111, projection="3d")
+
+    def update(k):
+        ax.cla()
+        _add_mesh(ax, frames[k][0], faces, face_values=frames[k][1], vmax=vmax)
+        _set_axes(ax, lim, elev, azim, f"iteration {k}")
+    anim = FuncAnimation(fig, update, frames=len(frames))
+    anim.save(out_gif, writer=PillowWriter(fps=fps), dpi=90)
+    plt.close(fig)
+
+
+def plot_mesh_triptych(
+    init_mesh, fit_mesh, ref_mesh, out_png,
+    labels=("initial", "fitted", "reference"),
+    elev=25, azim=135, title="Shape recovery", align_scale=True,
+):
+    """1x3 figure showing initial, fitted, and reference meshes.
+
+    If `align_scale` is True, the initial and fitted meshes are scaled to
+    match the reference mesh's bounding-box extent, making shape differences
+    easier to compare visually.
+    """
+    meshes = [init_mesh, fit_mesh, ref_mesh]
+    meshes = [(_to_np(v), _to_np(f)) for v, f in meshes]
+
+    if align_scale:
+        ref_extent = (meshes[2][0].max(0) - meshes[2][0].min(0)).max()
+        scaled = []
+        for v, f in meshes:
+            extent = (v.max(0) - v.min(0)).max()
+            s = ref_extent / extent if extent > 1e-12 else 1.0
+            scaled.append((v * s, f))
+        meshes = scaled
+
+    lim = 1.08 * max(np.abs(v).max() for v, _ in meshes)
+    fig = plt.figure(figsize=(9.5, 3.2))
+    cols = [(0.55, 0.65, 0.85), (0.9, 0.55, 0.35), (0.68, 0.75, 0.68)]
+    for j, ((v, f), lab, col) in enumerate(zip(meshes, labels, cols)):
+        ax = fig.add_subplot(1, 3, j + 1, projection="3d")
+        _add_mesh(ax, v, f, base_rgb=col)
+        _set_axes(ax, lim, elev, azim, lab)
+    fig.suptitle(title, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=150)
+    plt.close(fig)
+
+
+@torch.no_grad()
+def evolution_gif_from_model(
+    shape, p_seq, reference, out_gif="fit_evolution.gif",
+    fps=5, elev=22, azim=135
+):
+    """Animate the solver trajectory using a StarShapeModel."""
+    ref_v, ref_f = _as_torch_mesh(reference, shape.dirs.device)
+    r_ref = radial_support(ref_v, ref_f, shape.dirs)
+    faces = _to_np(shape.faces)
+    frames = []
+    for pp in p_seq:
+        r = shape.r0 * torch.exp(pp.detach())
+        s = torch.exp(torch.mean(torch.log(r_ref) - torch.log(r)))
+        v = _to_np((s * r)[:, None] * shape.dirs)
         e = _to_np(torch.log(s * r) - torch.log(r_ref))
         frames.append((v, e[faces].mean(1)))
     vmax = max(1e-3, np.percentile(np.abs(np.stack([e for _, e in frames])), 99))

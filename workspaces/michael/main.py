@@ -25,8 +25,8 @@ from common import (
     PhotometricModel,
     LightcurvePhotometricEngine,
     build_view_dirs,
-    compute_lightcurves_multicam,
     load_asteroid_mesh,
+    load_data,
 )
 
 # --------------------------------------------------------------------------- #
@@ -167,6 +167,7 @@ def solve(
     max_retries=10,
     step_tol=1e-4,
     verbose=True,
+    record_trajectory=False,
 ):
     """
     Levenberg-Marquardt driver. Each stage fixes (gamma, method); lam is
@@ -174,6 +175,9 @@ def solve(
     reuse the linearization via `lin`. Trial steps are always scored with the
     EXACT residual (fresh visibility tables at the trial point), so the
     frozen-J approximation can only slow convergence, never corrupt it.
+
+    If `record_trajectory` is True, a third element containing the parameter
+    trajectory (initial + one clone per accepted step) is returned for GIFs.
     """
     if stages is None:
         stages = [
@@ -182,6 +186,7 @@ def solve(
             dict(gamma=0.015, iters=8, method="frozen"),
         ]
     p, lam, history = p0.clone(), lam0, []
+    trajectory = [p0.detach().clone()] if record_trajectory else None
     model.set_params(p0)
     for si, st in enumerate(stages):
         gamma, method = st["gamma"], st.get("method", "frozen")
@@ -205,6 +210,8 @@ def solve(
                     p = p_trial
                     lam = max(lam * max(1 / 3, 1 - (2 * rho - 1) ** 3), 1e-12)
                     accepted = True
+                    if record_trajectory:
+                        trajectory.append(p.detach().clone())
                     break
                 lam = min(lam * 4.0, 1e9)
                 model.set_params(p)
@@ -243,6 +250,8 @@ def solve(
                 if verbose:
                     print("   converged (step tolerance)")
                 break
+    if record_trajectory:
+        return p, history, trajectory
     return p, history
 
 
@@ -267,9 +276,7 @@ def fd_check(model, p, gamma, h=1e-3):
 
 def test_fit(
     model_num=1,
-    n_frames=840,
-    fit_stride=3,
-    noise=0.01,
+    fit_stride=1,
     subdiv=3,
     lam_lap=30.0,
     lam_scale=10.0,
@@ -277,75 +284,65 @@ def test_fit(
     device=None,
     make_plots=True,
 ):
+    """
+    Fit a star-shaped model to the real asteroid lightcurve data.
+
+    The reference mesh is the challenge STL, centered and scaled to fit in a
+    unit cube.  No synthetic fallback is used.
+    """
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
     if device.type == "cpu":
-        print("[test] CPU detected — shrinking problem for a smoke test")
-        n_frames, proxy_subdiv = 240, 3
-    else:
-        proxy_subdiv = 4
+        print("[test] CPU detected — using a smaller template for a smoke test")
+        subdiv = 2
 
-    # ---- ground truth (challenge STL if available, else synthetic) ---------
-    try:
-        verts_gt, faces_gt = load_asteroid_mesh(model_num, device)
-        vmin, vmax = verts_gt.min(0).values, verts_gt.max(0).values
-        verts_gt = (verts_gt - (vmin + vmax) / 2) / (vmax - vmin).max()
-    except Exception as e:
-        print(f"[test] falling back to synthetic shape ({e})")
-        from star_forward import synthetic_potato
-
-        verts_gt, faces_gt = synthetic_potato(device)
-
-    from star_forward import star_shaped_proxy, radial_field
-
-    v_dat_t, f_dat_t = star_shaped_proxy(verts_gt, faces_gt, subdivisions=proxy_subdiv)
+    # ---- reference mesh from challenge data --------------------------------
+    verts_gt, faces_gt = load_asteroid_mesh(model_num, device)
+    vmin, vmax = verts_gt.min(0).values, verts_gt.max(0).values
+    verts_gt = (verts_gt - (vmin + vmax) / 2) / (vmax - vmin).max()
     print(
-        f"[test] proxy mesh: {v_dat_t.shape[0]} verts, {f_dat_t.shape[0]} faces"
+        f"[test] reference mesh: {verts_gt.shape[0]} verts, "
+        f"{faces_gt.shape[0]} faces"
     )
 
-    # ---- synthetic multi-camera data ---------------------------------------
-    cols = [
-        f"{az}_{k}"
-        for az in (0, 45, 90, 135, 225, 270, 315)
-        for k in ("hor1", "top", "bottom")
-    ]
+    # ---- real intensity lightcurves ----------------------------------------
+    dataset = load_data(model_num, origin="real", curve_type="intensity")
+    cols = list(dataset.data.columns)
+    data_df = dataset.data.dropna()
+    if len(data_df) < len(dataset.data):
+        print(f"[test] dropped {len(dataset.data) - len(data_df)} frames with NaNs")
+    data = torch.tensor(data_df.to_numpy(dtype=np.float32), device=device)
+    data = data / data.mean(dim=0, keepdim=True).clamp_min(1e-6)
+
+    frame_idx = torch.tensor(data_df.index.to_numpy(dtype=np.float32), device=device)
+    n_frames = int(frame_idx.max() - frame_idx.min() + 1)
+    angles = 2 * math.pi * (frame_idx - frame_idx.min()) / n_frames
+
     view_dirs0 = build_view_dirs(cols, device)
     sun_dir0 = torch.tensor([-1.0, 0.0, 0.0], device=device)
-    angles = torch.arange(n_frames, device=device, dtype=torch.float32) * (
-        2 * math.pi / n_frames
-    )
-
-    print(
-        f"[test] generating data: {n_frames} frames x {len(cols)} cameras ..."
-    )
-    t0 = time.time()
-    with torch.no_grad():
-        B = compute_lightcurves_multicam(
-            v_dat_t,
-            f_dat_t,
-            sun_dir0,
-            view_dirs0,
-            angles,
-            gamma=0.01,
-            eps=1e-3,
-            use_compile=False,
-            dir_chunk=2,
-            frame_chunk=60,
-            verbose=True,
-        )
-    B = B * (1.0 + noise * torch.randn_like(B))
-    data = B / B.mean(dim=0, keepdim=True)
-    print(f"[test] data generated in {time.time()-t0:.1f}s")
+    print(f"[test] real data: {data.shape[0]} frames x {len(cols)} cameras")
 
     # ---- fit ---------------------------------------------------------------
     from star_forward import StarShapeModel, make_template, generate_initial_guess
+    from visualize_fit import (
+        plot_intensity_and_binary_grids,
+        plot_mesh_triptych,
+        evolution_gif_from_model,
+        visualize_fit,
+    )
 
     dirs_t, faces_t, L = make_template(subdiv, device)
     shape = StarShapeModel(
         dirs_t, faces_t, L, r0=0.5, lam_lap=lam_lap, lam_scale=lam_scale
     )
     engine = LightcurvePhotometricEngine(
-        data[::fit_stride], angles[::fit_stride], sun_dir0, view_dirs0
+        data[::fit_stride],
+        angles[::fit_stride],
+        sun_dir0,
+        view_dirs0,
+        use_compile=False,
+        dir_chunk=2,
+        frame_chunk=60,
     )
     model = PhotometricModel(shape, engine)
 
@@ -362,12 +359,13 @@ def test_fit(
     )
 
     t0 = time.time()
-    p, hist = solve(model, p0)
+    p, hist, trajectory = solve(model, p0, record_trajectory=True)
     print(f"[test] solve time {time.time()-t0:.1f}s")
 
-    # ---- metrics vs. the star-shaped target --------------------------------
-    dirs_np = shape.dirs.cpu().numpy().astype(np.float64)
-    r_gt = radial_field(v_dat_t, f_dat_t, shape.dirs).cpu().numpy()
+    # ---- metrics vs. the reference mesh ------------------------------------
+    from star_forward import radial_field
+
+    r_gt = radial_field(verts_gt, faces_gt, shape.dirs).cpu().numpy()
     report = {}
     for name, pp in (("init", p0), ("fit ", p)):
         r_m = (shape.r0 * torch.exp(pp)).cpu().numpy()
@@ -393,6 +391,13 @@ def test_fit(
             model_curve = (Bf / Bf.mean(0, keepdim=True)).cpu().numpy()
         dat = engine.data.cpu().numpy()
         x = np.degrees(engine.angles.cpu().numpy())
+
+        # 3x7 grids: intensity and Otsu-binary
+        plot_intensity_and_binary_grids(
+            dat, model_curve, x, cols, prefix="gn_fit"
+        )
+
+        # classic per-camera curve comparison
         fig, axes = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
         for ax, ci in zip(axes, (0, len(cols) // 2, len(cols) - 1)):
             ax.plot(x, dat[:, ci], "k.", ms=2, label=f"data {cols[ci]}")
@@ -402,6 +407,7 @@ def test_fit(
         axes[-1].set_xlabel("rotation angle [deg]")
         fig.tight_layout()
         fig.savefig("gn_fit_curves.png", dpi=140)
+        plt.close(fig)
 
         plt.figure(figsize=(6, 4))
         plt.semilogy([h["cost_new"] for h in hist], ".-")
@@ -410,6 +416,7 @@ def test_fit(
         plt.grid(alpha=0.3)
         plt.tight_layout()
         plt.savefig("gn_fit_convergence.png", dpi=140)
+        plt.close()
 
         plt.figure(figsize=(5, 5))
         r_m = (shape.r0 * torch.exp(p)).cpu().numpy()
@@ -421,8 +428,41 @@ def test_fit(
         plt.ylabel("fitted radius (scale-aligned)")
         plt.tight_layout()
         plt.savefig("gn_fit_radii.png", dpi=140)
+        plt.close()
+
+        # 1x3 mesh triptych
+        init_mesh = (shape.r0 * torch.exp(p0))[:, None] * shape.dirs, shape.faces
+        fit_mesh = (shape.r0 * torch.exp(p))[:, None] * shape.dirs, shape.faces
+        plot_mesh_triptych(
+            init_mesh,
+            fit_mesh,
+            (verts_gt, faces_gt),
+            "gn_fit_mesh_triptych.png",
+            title="Initial / fitted / reference mesh",
+        )
+
+        # full diagnostic report (shaded grids, error maps, sections, GLB)
+        class _FitterLike:
+            def __init__(self, shape):
+                self.dirs_t = shape.dirs
+                self.faces_t = shape.faces
+                self.r0 = shape.r0
+                self.device = shape.dirs.device
+
+        visualize_fit(
+            _FitterLike(shape), p0, p, reference=(verts_gt, faces_gt),
+            out_prefix="gn_fit", interactive=True, turntable=False,
+        )
+
+        # evolution GIF
+        evolution_gif_from_model(
+            shape, trajectory, (verts_gt, faces_gt),
+            out_gif="gn_fit_evolution.gif", fps=4
+        )
+
         print(
-            "[test] wrote gn_fit_curves.png / gn_fit_convergence.png / gn_fit_radii.png"
+            "[test] wrote gn_fit_intensity_grid.png / gn_fit_binary_grid.png / "
+            "gn_fit_mesh_triptych.png / gn_fit_evolution.gif"
         )
 
     return dict(p=p, p0=p0, history=hist, model=model, report=report)
