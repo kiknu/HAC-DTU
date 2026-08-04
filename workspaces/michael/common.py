@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 """
-Integrated soft-rasterizer for non-convex asteroid lightcurves.
+common.py — Base classes, data I/O, and model-agnostic soft-rasterizer
+for differentiable asteroid lightcurve inversion.
 
-This module implements a differentiable, disk-integrated brightness model for
-asteroid lightcurves using a soft visibility rasterizer. It supports both
-per-frame and batched multi-camera evaluations, with optional torch.compile
-acceleration.
-
-Key features:
-- Orthographic projection with soft Z-buffer (larger z = closer).
-- Lambertian, Lommel-Seeliger, and combined BRDFs with foreshortening.
-- Backface culling and soft barycentric coverage for stability.
-- Batched visibility tables for efficient multi-camera computation.
-- Rotation conventions matching the original PyTorch3D pipeline.
+This module contains:
+  • Abstract base classes for shape models and photometric engines.
+  • A generic LightcurvePhotometricEngine that pre-computes direction
+    bookkeeping and integrates soft-rasterized brightness for any mesh.
+  • Data loaders, view-direction builders, and geometry helpers.
 """
 
-import time
+import math
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -43,7 +38,7 @@ class Dataset:
     data: pd.DataFrame
 
 
-PROJECT_DIR = Path(__file__).resolve().parents[2]
+PROJECT_DIR = Path(__file__).resolve().parents[0]
 CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
 
 
@@ -87,34 +82,13 @@ def load_data(
     data.index.name = "frame"
     data = data.rename(
         columns={
-            1: "0_hor1",
-            2: "0_hor2",
-            3: "0_top",
-            4: "0_bottom",
-            5: "45_hor1",
-            6: "45_hor2",
-            7: "45_top",
-            8: "45_bottom",
-            9: "90_hor1",
-            10: "90_hor2",
-            11: "90_top",
-            12: "90_bottom",
-            13: "135_hor1",
-            14: "135_hor2",
-            15: "135_top",
-            16: "135_bottom",
-            17: "225_hor1",
-            18: "225_hor2",
-            19: "225_top",
-            20: "225_bottom",
-            21: "270_hor1",
-            22: "270_hor2",
-            23: "270_top",
-            24: "270_bottom",
-            25: "315_hor1",
-            26: "315_hor2",
-            27: "315_top",
-            28: "315_bottom",
+            1: "0_hor1", 2: "0_hor2", 3: "0_top", 4: "0_bottom",
+            5: "45_hor1", 6: "45_hor2", 7: "45_top", 8: "45_bottom",
+            9: "90_hor1", 10: "90_hor2", 11: "90_top", 12: "90_bottom",
+            13: "135_hor1", 14: "135_hor2", 15: "135_top", 16: "135_bottom",
+            17: "225_hor1", 18: "225_hor2", 19: "225_top", 20: "225_bottom",
+            21: "270_hor1", 22: "270_hor2", 23: "270_top", 24: "270_bottom",
+            25: "315_hor1", 26: "315_hor2", 27: "315_top", 28: "315_bottom",
         }
     )
     return Dataset(
@@ -123,6 +97,351 @@ def load_data(
         curve_type=curve_type,
         data=data,
     )
+
+
+def estimate_curve_weights(data: torch.Tensor) -> torch.Tensor:
+    """Per-curve 1/sigma from robust MAD of the first difference."""
+    d = data[1:] - data[:-1]
+    mad = (d - d.median(dim=0).values).abs().median(dim=0).values
+    sigma = (1.4826 / math.sqrt(2.0)) * mad
+    return 1.0 / sigma.clamp_min(2e-3)
+
+
+# --------------------------------------------------------------------------- #
+# Base classes
+# --------------------------------------------------------------------------- #
+
+class ShapeModel(ABC):
+    """Parameterized shape representation."""
+
+    @abstractmethod
+    def get_params(self) -> torch.Tensor:
+        """Current parameter vector (1D)."""
+        pass
+
+    @abstractmethod
+    def set_params(self, params: torch.Tensor) -> None:
+        pass
+
+    @abstractmethod
+    def num_params(self) -> int:
+        pass
+
+    @abstractmethod
+    def compute_geometry(self, params: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Pure functional: return (verts, faces) for the given params."""
+        pass
+
+    def get_vertices(self) -> torch.Tensor:
+        return self.compute_geometry(self.get_params())[0]
+
+    def get_faces(self) -> torch.Tensor:
+        return self.compute_geometry(self.get_params())[1]
+
+    @abstractmethod
+    def regularization_residuals_at(self, params: torch.Tensor) -> torch.Tensor:
+        """Prior residual vector for given params (e.g. Laplacian*logr, scale gauge)."""
+        pass
+
+    def regularization_residuals(self) -> torch.Tensor:
+        return self.regularization_residuals_at(self.get_params())
+
+    def residual_norm(self) -> float:
+        r = self.regularization_residuals()
+        return 0.5 * (r @ r).item()
+
+
+class PhotometricEngine(ABC):
+    """Computes brightness/residuals from geometry (verts, faces) and data."""
+
+    @abstractmethod
+    def brightness_from_geometry(
+        self,
+        verts: torch.Tensor,
+        faces: torch.Tensor,
+        gamma: float,
+        context: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """(N, C) raw brightness for all frames/cameras."""
+        pass
+
+    def brightness(
+        self,
+        shape_model: ShapeModel,
+        gamma: float,
+        frozen_vis: bool = False,
+    ) -> torch.Tensor:
+        verts, faces = shape_model.get_vertices(), shape_model.get_faces()
+        ctx = self.linearization_context(verts, faces, gamma) if frozen_vis else None
+        return self.brightness_from_geometry(verts, faces, gamma, ctx)
+
+    @abstractmethod
+    def photometric_residuals_from_geometry(
+        self,
+        verts: torch.Tensor,
+        faces: torch.Tensor,
+        gamma: float,
+        weights: Optional[torch.Tensor] = None,
+        context: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """(N*C,) data residuals: (brightness/mean - data) * weight."""
+        pass
+
+    def photometric_residuals(
+        self,
+        shape_model: ShapeModel,
+        gamma: float,
+        weights: Optional[torch.Tensor] = None,
+        frozen_vis: bool = False,
+    ) -> torch.Tensor:
+        verts, faces = shape_model.get_vertices(), shape_model.get_faces()
+        ctx = self.linearization_context(verts, faces, gamma) if frozen_vis else None
+        return self.photometric_residuals_from_geometry(verts, faces, gamma, weights, ctx)
+
+    def linearization_context(
+        self,
+        verts: torch.Tensor,
+        faces: torch.Tensor,
+        gamma: float,
+    ) -> Any:
+        """Opaque context for frozen linearization (e.g. visibility table)."""
+        return None
+
+    @property
+    @abstractmethod
+    def data(self) -> torch.Tensor:
+        """(N, C) observed mean‑normalized lightcurves."""
+        pass
+
+
+class PhotometricModel:
+    """Combines a ShapeModel and PhotometricEngine; provides full residual vector."""
+
+    def __init__(self, shape_model: ShapeModel, engine: PhotometricEngine):
+        self.shape = shape_model
+        self.engine = engine
+
+    def residuals_at(
+        self,
+        params: torch.Tensor,
+        gamma: float,
+        weights: Optional[torch.Tensor] = None,
+        context: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """Pure functional residual evaluation for AD."""
+        verts, faces = self.shape.compute_geometry(params)
+        photo = self.engine.photometric_residuals_from_geometry(
+            verts, faces, gamma, weights, context
+        )
+        reg = self.shape.regularization_residuals_at(params)
+        return torch.cat([photo, reg])
+
+    def photo_residuals_at(
+        self,
+        params: torch.Tensor,
+        gamma: float,
+        context: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """Photometric part only (for initialization scoring)."""
+        verts, faces = self.shape.compute_geometry(params)
+        return self.engine.photometric_residuals_from_geometry(
+            verts, faces, gamma, context=context
+        )
+
+    def residuals(
+        self,
+        gamma: float,
+        weights: Optional[torch.Tensor] = None,
+        frozen_vis: bool = False,
+    ) -> torch.Tensor:
+        """Stateful residual evaluation using current shape parameters."""
+        ctx = None
+        if frozen_vis:
+            with torch.no_grad():
+                verts, faces = self.shape.get_vertices(), self.shape.get_faces()
+                ctx = self.engine.linearization_context(verts, faces, gamma)
+        return self.residuals_at(self.shape.get_params(), gamma, weights, ctx)
+
+    def get_params(self):
+        return self.shape.get_params()
+
+    def set_params(self, params):
+        self.shape.set_params(params)
+
+    def num_params(self):
+        return self.shape.num_params()
+
+
+# --------------------------------------------------------------------------- #
+# Lightcurve photometric engine (model-agnostic)
+# --------------------------------------------------------------------------- #
+
+class LightcurvePhotometricEngine(PhotometricEngine):
+    """
+    Pre-computes direction bookkeeping (frame rotation, deduped visibility
+    passes) and integrates soft-rasterized brightness for any mesh.
+    """
+
+    def __init__(
+        self,
+        data: torch.Tensor,
+        angles: torch.Tensor,
+        sun_dir0: torch.Tensor,
+        view_dirs0: torch.Tensor,
+        *,
+        eps: float = 1e-3,
+        brdf_type: Literal["lambertian", "lommel_seeliger", "combined"] = "combined",
+        rotation_sign: float = -1.0,
+        phase_offset: float = 0.0,
+        frame_chunk: int = 120,
+        dir_chunk: int = 8,
+        dedupe_tol: float = 1e-4,
+        cull_frac: Optional[float] = 0.65,
+        w_curve: Optional[torch.Tensor] = None,
+        use_compile: bool = True,
+        use_checkpoint: bool = False,
+        mask_backface_occluders: bool = True,
+        vis_dtype: Optional[torch.dtype] = None,
+    ):
+        self.device = data.device
+        self._data = data
+        self.angles = angles
+        self.sun_dir0 = sun_dir0
+        self.view_dirs0 = view_dirs0
+        self.N, self.C = data.shape
+        self.eps = eps
+        self.brdf_type = brdf_type
+        self.frame_chunk = frame_chunk
+        self.dir_chunk = dir_chunk
+        self.cull_frac = cull_frac
+        self.use_compile = use_compile
+        self.use_checkpoint = use_checkpoint
+        self.mask_backface_occluders = mask_backface_occluders
+        self.vis_dtype = vis_dtype
+
+        w = estimate_curve_weights(data) if w_curve is None else w_curve
+        self.w = w.reshape(1, self.C)
+
+        # Body-frame directions for every (frame, camera); dedupe ONCE here.
+        psi = rotation_sign * angles + phase_offset
+        self.sun_dirs = _rotate_dirs_z(sun_dir0, psi)  # (N, 3)
+        self.view_dirs = _rotate_dirs_z(view_dirs0, psi)  # (N, C, 3)
+        alld = torch.cat([self.sun_dirs, self.view_dirs.reshape(-1, 3)], 0)
+        key = torch.round(alld / dedupe_tol)
+        uniq, inv = torch.unique(key, dim=0, return_inverse=True)
+        self.uniq_dirs = F.normalize(uniq * dedupe_tol, dim=-1)  # (U, 3)
+        self.inv_sun = inv[: self.N]
+        self.inv_view = inv[self.N :].reshape(self.N, self.C)
+
+        # Store config for cheap subsampled copies
+        self._cfg = dict(
+            eps=eps,
+            brdf_type=brdf_type,
+            rotation_sign=rotation_sign,
+            phase_offset=phase_offset,
+            frame_chunk=frame_chunk,
+            dir_chunk=dir_chunk,
+            dedupe_tol=dedupe_tol,
+            cull_frac=cull_frac,
+            use_compile=use_compile,
+            use_checkpoint=use_checkpoint,
+            mask_backface_occluders=mask_backface_occluders,
+            vis_dtype=vis_dtype,
+        )
+
+    @property
+    def data(self) -> torch.Tensor:
+        return self._data
+
+    def subsampled(self, stride: int) -> "LightcurvePhotometricEngine":
+        """Return a new engine on every `stride`-th frame (cheap init search)."""
+        return LightcurvePhotometricEngine(
+            self.data[::stride],
+            self.angles[::stride],
+            self.sun_dir0,
+            self.view_dirs0,
+            w_curve=self.w.flatten(),
+            **self._cfg,
+        )
+
+    # ---- internal visibility table -----------------------------------------
+
+    def _build_table(
+        self,
+        verts: torch.Tensor,
+        faces: torch.Tensor,
+        gamma: float,
+        ckpt: bool = False,
+    ) -> torch.Tensor:
+        v0, v1, v2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
+        normals = torch.cross(v1 - v0, v2 - v0, dim=-1)
+        areas = 0.5 * normals.norm(dim=-1)
+        nhat = F.normalize(normals, dim=-1)
+        return visibility_table(
+            verts,
+            faces,
+            nhat,
+            self.uniq_dirs,
+            gamma=gamma,
+            eps=self.eps,
+            cull_frac=self.cull_frac,
+            dir_chunk=self.dir_chunk,
+            use_compile=self.use_compile,
+            use_checkpoint=ckpt,
+            mask_backface_occluders=self.mask_backface_occluders,
+            vis_dtype=self.vis_dtype,
+        )
+
+    def linearization_context(
+        self, verts: torch.Tensor, faces: torch.Tensor, gamma: float
+    ) -> Any:
+        with torch.no_grad():
+            return self._build_table(verts, faces, gamma, ckpt=False)
+
+    # ---- brightness / residuals --------------------------------------------
+
+    def brightness_from_geometry(
+        self,
+        verts: torch.Tensor,
+        faces: torch.Tensor,
+        gamma: float,
+        context: Optional[Any] = None,
+    ) -> torch.Tensor:
+        v0, v1, v2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
+        normals = torch.cross(v1 - v0, v2 - v0, dim=-1)
+        areas = 0.5 * normals.norm(dim=-1)
+        nhat = F.normalize(normals, dim=-1)
+
+        table = context if context is not None else self._build_table(verts, faces, gamma)
+        out = []
+        for i in range(0, self.N, self.frame_chunk):
+            j = i + self.frame_chunk
+            out.append(
+                _integrate_chunk(
+                    areas,
+                    nhat,
+                    self.sun_dirs[i:j],
+                    self.view_dirs[i:j],
+                    table,
+                    self.inv_sun[i:j],
+                    self.inv_view[i:j],
+                    self.brdf_type,
+                )
+            )
+        return torch.cat(out, 0)  # (N, C)
+
+    def photometric_residuals_from_geometry(
+        self,
+        verts: torch.Tensor,
+        faces: torch.Tensor,
+        gamma: float,
+        weights: Optional[torch.Tensor] = None,
+        context: Optional[Any] = None,
+    ) -> torch.Tensor:
+        B = self.brightness_from_geometry(verts, faces, gamma, context)
+        model = B / B.mean(dim=0, keepdim=True)
+        w = weights if weights is not None else self.w
+        return ((model - self._data) * w).reshape(-1)
 
 
 # --------------------------------------------------------------------------- #
@@ -150,6 +469,20 @@ def _ortho_bases(dirs: torch.Tensor) -> torch.Tensor:
     w = torch.linalg.cross(d, u, dim=-1)
     return torch.stack([u, w, d], dim=-1)
 
+
+def _rotate_dirs_z(d0: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
+    """Apply R_z(-psi_k) to fixed world direction(s)."""
+    shape = (psi.shape[0],) + (1,) * (d0.dim() - 1)
+    c, s = torch.cos(psi).view(shape), torch.sin(psi).view(shape)
+    x, y, z = d0[..., 0], d0[..., 1], d0[..., 2]
+    xr = c * x + s * y
+    yr = -s * x + c * y
+    return torch.stack([xr, yr, z.expand_as(xr)], dim=-1)
+
+
+# --------------------------------------------------------------------------- #
+# Soft visibility
+# --------------------------------------------------------------------------- #
 
 def _soft_visibility(
     centroids: torch.Tensor,
@@ -239,10 +572,12 @@ def _direction_visibility(
         return _soft_visibility(centroids, face_p[:, :, :2], face_p[:, :, 2], gamma, eps)
 
     idx = keep.nonzero(as_tuple=True)[0]
+    vis = torch.zeros(faces.shape[0], dtype=verts.dtype, device=verts.device)
+    if idx.numel() == 0:
+        return vis
     face_sub = face_p[idx]
     centroids = face_sub.mean(dim=1)[:, :2]
     vis_sub = _soft_visibility(centroids, face_sub[:, :, :2], face_sub[:, :, 2], gamma, eps)
-    vis = torch.zeros(faces.shape[0], dtype=verts.dtype, device=verts.device)
     vis.index_copy_(0, idx, vis_sub)
     return vis
 
@@ -363,16 +698,6 @@ def compute_lightcurve(
 # --------------------------------------------------------------------------- #
 # Batched visibility table and multi-camera lightcurves
 # --------------------------------------------------------------------------- #
-
-def _rotate_dirs_z(d0: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
-    """Apply R_z(-psi_k) to fixed world direction(s)."""
-    shape = (psi.shape[0],) + (1,) * (d0.dim() - 1)
-    c, s = torch.cos(psi).view(shape), torch.sin(psi).view(shape)
-    x, y, z = d0[..., 0], d0[..., 1], d0[..., 2]
-    xr = c * x + s * y
-    yr = -s * x + c * y
-    return torch.stack([xr, yr, z.expand_as(xr)], dim=-1)
-
 
 def _soft_visibility_batch(face_xy, face_z, gamma, eps, valid=None):
     """Batched soft visibility: (B, K, 3, 2) and (B, K, 3) -> (B, K)."""
@@ -634,157 +959,3 @@ def max_frontface_frac(nhat, dirs):
     """Run once per mesh to choose cull_frac (add ~0.05 margin)."""
     mu = torch.einsum("fi,di->df", nhat, dirs)
     return (mu > 0).float().mean(dim=1).max().item()
-
-
-# --------------------------------------------------------------------------- #
-# Main driver (demo)
-# --------------------------------------------------------------------------- #
-
-def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    target_model = 3
-    N = 842
-    origin = "real"
-    curve_type = "intensity"
-    target_column = "45_hor1"
-
-    GAMMA = 0.02
-    EPS = 1e-3
-
-    verts, faces = load_asteroid_mesh(target_model, device)
-    print(f"Loaded mesh: {verts.shape[0]} vertices, {faces.shape[0]} faces")
-
-    dataset = load_data(target_model, origin, curve_type)
-    real_curve = dataset.data[target_column].values[:N]
-
-    vmin, vmax = verts.min(dim=0).values, verts.max(dim=0).values
-    centroid = (vmin + vmax) / 2.0
-    extent = (vmax - vmin).max()
-    verts = (verts - centroid) / extent
-
-    sun_dir_0 = torch.tensor([-1.0, 0.0, 0.0], device=device, dtype=torch.float32)
-
-    phi_deg = float(target_column.split("_")[0])
-    alpha_map = {"hor1": 0, "hor2": 0, "top": 26, "bottom": -26}
-    alpha_deg = alpha_map.get(target_column.split("_")[1], 0)
-    phi = np.radians(phi_deg - 180)
-    alpha = np.radians(alpha_deg)
-    camera_vector = np.array(
-        [
-            np.cos(phi) * np.cos(alpha),
-            np.sin(phi) * np.cos(alpha),
-            np.sin(alpha),
-        ]
-    )
-    view_dir_0 = torch.tensor(
-        camera_vector / np.linalg.norm(camera_vector), device=device, dtype=torch.float32
-    )
-
-    angles = torch.arange(N, device=device) * (2 * np.pi / N)
-
-    print("Computing integrated lightcurve …")
-    t0 = time.time()
-    with torch.no_grad():
-        simulated = compute_lightcurve(
-            verts,
-            faces,
-            sun_dir_0,
-            view_dir_0,
-            angles,
-            gamma=GAMMA,
-            eps=EPS,
-            brdf_type="combined",
-        )
-    simulated = simulated.cpu().numpy()
-    print(f"Forward pass ({N} pts): {time.time()-t0:.2f}s")
-
-    sim_norm = simulated / simulated.mean()
-    real_norm = real_curve / real_curve.mean()
-
-    plt.figure(figsize=(10, 5))
-    x_axis = np.linspace(0, 360, N)
-
-    plt.plot(
-        x_axis,
-        sim_norm,
-        color="blue",
-        linewidth=2.0,
-        label="Integrated Soft-Rasterizer (fixed)",
-    )
-    plt.plot(
-        x_axis,
-        real_norm,
-        color="red",
-        linewidth=1.5,
-        linestyle="--",
-        alpha=0.8,
-        label=f"{origin} Data ({target_column})",
-    )
-
-    plt.title(f"Lightcurve Comparison: Model {target_model}")
-    plt.xlabel("Rotation Angle (Degrees)")
-    plt.ylabel("Normalized Intensity (Mean = 1.0)")
-    plt.legend()
-    plt.grid(True, linestyle="--", alpha=0.6)
-    plt.tight_layout()
-    plt.savefig("lightcurve_comparison_integrated.png", dpi=150)
-    print("Saved plot to 'lightcurve_comparison_integrated.png'")
-
-    print("\nGradient sanity check (4 angles) …")
-    verts_g = verts.clone().requires_grad_(True)
-    sim_g = compute_lightcurve(
-        verts_g,
-        faces,
-        sun_dir_0,
-        view_dir_0,
-        angles[:4],
-        gamma=GAMMA,
-        eps=EPS,
-        brdf_type="combined",
-    )
-    loss = sim_g.sum()
-
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
-    t0 = time.time()
-    loss.backward()
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
-    print(f"  Backward pass: {time.time()-t0:.3f}s")
-    print(f"  ||∇_verts||  : {verts_g.grad.norm().item():.4f}")
-
-
-def main_multicam():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    verts, faces = load_asteroid_mesh(3, device)
-    vmin, vmax = verts.min(0).values, verts.max(0).values
-    verts = (verts - (vmin + vmax) / 2) / (vmax - vmin).max()
-
-    dataset = load_data(3, "simulated", "intensity")
-    cols = list(dataset.data.columns)
-    view_dirs0 = build_view_dirs(cols, device)
-    sun_dir0 = torch.tensor([-1.0, 0.0, 0.0], device=device)
-    N = 360
-    angles = torch.arange(N, device=device) * (2 * np.pi / N)
-
-    torch.cuda.reset_peak_memory_stats()
-    with torch.no_grad():
-        # warm-up = compile
-        _ = compute_lightcurves_multicam(
-            verts, faces, sun_dir0, view_dirs0, angles, verbose=True
-        )
-        torch.cuda.synchronize()
-        t0 = time.time()
-        lcs = compute_lightcurves_multicam(
-            verts, faces, sun_dir0, view_dirs0, angles
-        )
-        torch.cuda.synchronize()
-    print(
-        f"forward: {time.time()-t0:.2f}s, "
-        f"peak mem: {torch.cuda.max_memory_allocated()/1e9:.2f} GB"
-    )
-    lcs = lcs / lcs.mean(dim=0, keepdim=True)
-
-
-if __name__ == "__main__":
-    main_multicam()
