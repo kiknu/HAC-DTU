@@ -30,19 +30,19 @@ safe for torch.func.{jvp,vjp,vmap}.
 
 import math
 import time
-
 import numpy as np
 import torch
 import torch.nn.functional as F
 import trimesh
 from torch.func import jvp, vmap
 from torch.utils.checkpoint import checkpoint
-
-from forward_model import (            # <- adjust module name if needed
+from shape_model import OctantoidShape
+from forward_model import (
     _integrate_chunk,
     _ortho_bases,
     _rotate_dirs_z,
     _soft_visibility_batch,
+    _integrate_chunk_binary,
     build_view_dirs,
     compute_lightcurves_multicam,
     load_asteroid_mesh,
@@ -97,51 +97,224 @@ def ellipsoid_log_radius(dirs, a, b, c, theta):
 # --------------------------------------------------------------------------- #
 
 class ShapeFitter:
-    """
-    data  : (N, C) mean-normalized curves; row k = one rotation state seen by
-            all C cameras (your staggered layout).
-    angles: (N,) rotation angles matching the rows of `data`.
-    """
-
-    def __init__(self, data, angles, sun_dir0, view_dirs0, *,
-                 subdiv=3, eps=1e-3, brdf_type="combined",
-                 rotation_sign=-1.0, phase_offset=0.0,
-                 lam_lap=30.0, lam_scale=10.0, w_curve=None, r0=0.5,
-                 frame_chunk=120, dir_chunk=8, dedupe_tol=1e-4):
+    def __init__(
+        self,
+        data,
+        angles,
+        sun_dir0,
+        view_dirs0,
+        *,
+        data_bin=None,
+        tau_bin=0.10,
+        beta_bin=8.0,
+        bin_sigma_floor=2e-3,
+        lam_bin=1.0,
+        w_curve=None,
+        w_bin=None,
+        representation="star",
+        subdiv=3,
+        lmax=10,
+        detail_lmax=None,
+        detail_scale=0.20,
+        max_log_scale=3.0,
+        eps=1e-3,
+        brdf_type="combined",
+        rotation_sign=-1.0,
+        phase_offset=0.0,
+        lam_lap=30.0,
+        lam_scale=10.0,
+        lam_shape=0.3,
+        lam_detail=3.0,
+        sh_degree_power=2.0,
+        r0=0.5,
+        frame_chunk=120,
+        dir_chunk=8,
+        dedupe_tol=1e-4,
+    ):
         self.device = data.device
-        self.data, self.angles = data, angles
-        self.sun_dir0, self.view_dirs0 = sun_dir0, view_dirs0
+        self.data = data
+        self.data_bin = data_bin
+        self.angles = angles
+        self.sun_dir0 = sun_dir0
+        self.view_dirs0 = view_dirs0
+
         self.N, self.C = data.shape
-        self.n_photo = self.N * self.C
-        self.eps, self.brdf_type, self.r0 = eps, brdf_type, r0
-        self.lam_lap, self.lam_scale = lam_lap, lam_scale
-        self.frame_chunk, self.dir_chunk = frame_chunk, dir_chunk
-        self._cfg = dict(subdiv=subdiv, eps=eps, brdf_type=brdf_type,
-                         rotation_sign=rotation_sign, phase_offset=phase_offset,
-                         lam_lap=lam_lap, lam_scale=lam_scale, r0=r0,
-                         frame_chunk=frame_chunk, dir_chunk=dir_chunk,
-                         dedupe_tol=dedupe_tol)
 
-        self.dirs_t, self.faces_t, self.L = make_template(subdiv, self.device)
-        self.n_params = self.dirs_t.shape[0]
+        if angles.shape != (self.N,):
+            raise ValueError("angles must have shape (N,)")
 
-        w = estimate_curve_weights(data) if w_curve is None else w_curve
-        self.w = w.reshape(1, self.C)
+        if view_dirs0.shape != (self.C, 3):
+            raise ValueError("view_dirs0 must have shape (C, 3)")
 
-        # Body-frame directions for every (frame, camera); dedupe ONCE here.
+        if data_bin is not None and data_bin.shape != data.shape:
+            raise ValueError(
+                "data_bin must have the same shape as data"
+            )
+
+        self.n_int = self.N * self.C
+        self.n_bin = (
+            self.N * self.C if data_bin is not None else 0
+        )
+        self.n_photo = self.n_int + self.n_bin
+
+        self.tau_bin = tau_bin
+        self.beta_bin = beta_bin
+        self.bin_sigma_floor = bin_sigma_floor
+        self.lam_bin = lam_bin
+
+        self.eps = eps
+        self.brdf_type = brdf_type
+        self.r0 = r0
+
+        self.lam_lap = lam_lap
+        self.lam_scale = lam_scale
+        self.lam_shape = lam_shape
+        self.lam_detail = lam_detail
+        self.sh_degree_power = sh_degree_power
+
+        self.frame_chunk = frame_chunk
+        self.dir_chunk = dir_chunk
+        self.representation = representation
+
+        self.dirs_t, self.faces_t, self.L = make_template(
+            subdiv, self.device
+        )
+
+        if representation == "star":
+            self.octantoid = None
+            self.n_params = self.dirs_t.shape[0]
+
+        elif representation == "octantoid":
+            self.octantoid = OctantoidShape(
+                self.dirs_t,
+                self.faces_t,
+                lmax=lmax,
+                r0=r0,
+                detail_lmax=detail_lmax,
+                detail_scale=detail_scale,
+                max_log_scale=max_log_scale,
+            )
+            self.n_params = self.octantoid.n_params
+
+        else:
+            raise ValueError(
+                "representation must be 'star' or 'octantoid'"
+            )
+
+        self.w = (
+            estimate_curve_weights(data)
+            if w_curve is None
+            else w_curve
+        ).reshape(1, self.C)
+
+        if data_bin is not None:
+            if w_bin is None:
+                d = data_bin[1:] - data_bin[:-1]
+                mad = (
+                    d - d.median(dim=0).values
+                ).abs().median(dim=0).values
+                sigma = (
+                    1.4826 / math.sqrt(2.0)
+                ) * mad
+
+                self.w_bin = (
+                    lam_bin
+                    / sigma.clamp_min(bin_sigma_floor)
+                ).reshape(1, self.C)
+            else:
+                self.w_bin = w_bin.reshape(1, self.C)
+        else:
+            self.w_bin = None
+
+        self._cfg = dict(
+            tau_bin=tau_bin,
+            beta_bin=beta_bin,
+            bin_sigma_floor=bin_sigma_floor,
+            lam_bin=lam_bin,
+            representation=representation,
+            subdiv=subdiv,
+            lmax=lmax,
+            detail_lmax=detail_lmax,
+            detail_scale=detail_scale,
+            max_log_scale=max_log_scale,
+            eps=eps,
+            brdf_type=brdf_type,
+            rotation_sign=rotation_sign,
+            phase_offset=phase_offset,
+            lam_lap=lam_lap,
+            lam_scale=lam_scale,
+            lam_shape=lam_shape,
+            lam_detail=lam_detail,
+            sh_degree_power=sh_degree_power,
+            r0=r0,
+            frame_chunk=frame_chunk,
+            dir_chunk=dir_chunk,
+            dedupe_tol=dedupe_tol,
+        )
+
+        # Existing direction bookkeeping.
         psi = rotation_sign * angles + phase_offset
-        self.sun_dirs = _rotate_dirs_z(sun_dir0, psi)               # (N, 3)
-        self.view_dirs = _rotate_dirs_z(view_dirs0, psi)            # (N, C, 3)
-        alld = torch.cat([self.sun_dirs, self.view_dirs.reshape(-1, 3)], 0)
-        key = torch.round(alld / dedupe_tol)
-        uniq, inv = torch.unique(key, dim=0, return_inverse=True)
-        self.uniq_dirs = F.normalize(uniq * dedupe_tol, dim=-1)     # (U, 3)
-        self.inv_sun = inv[:self.N]
-        self.inv_view = inv[self.N:].reshape(self.N, self.C)
 
-    # ---- geometry ----------------------------------------------------------
+        self.sun_dirs = _rotate_dirs_z(
+            sun_dir0, psi
+        )
+        self.view_dirs = _rotate_dirs_z(
+            view_dirs0, psi
+        )
+
+        all_dirs = torch.cat(
+            [
+                self.sun_dirs,
+                self.view_dirs.reshape(-1, 3),
+            ],
+            dim=0,
+        )
+
+        key = torch.round(all_dirs / dedupe_tol)
+        uniq, inv = torch.unique(
+            key, dim=0, return_inverse=True
+        )
+
+        self.uniq_dirs = F.normalize(
+            uniq * dedupe_tol, dim=-1
+        )
+        self.inv_sun = inv[: self.N]
+        self.inv_view = inv[self.N :].reshape(
+            self.N, self.C
+        )
+
     def verts(self, p):
-        return self.r0 * torch.exp(p)[:, None] * self.dirs_t
+        if self.representation == "star":
+            return (
+                self.r0
+                * torch.exp(p)[:, None]
+                * self.dirs_t
+            )
+
+        return self.octantoid.vertices(p)
+
+    def shape_prior(self, p):
+        if self.representation == "star":
+            return torch.cat(
+                [
+                    self.lam_lap * (self.L @ p),
+                    self.lam_scale * p.mean().reshape(1),
+                ]
+            )
+
+        return self.octantoid.regularization(
+            p,
+            lam_shape=self.lam_shape,
+            lam_detail=self.lam_detail,
+            degree_power=self.sh_degree_power,
+        )
+
+    def project_parameters(self, p):
+        if self.representation == "star":
+            return p.clamp(-2.0, 2.0)
+
+        # Octantoid exponential fields are smoothly bounded internally.
+        return p
 
     def _geom(self, p):
         v = self.verts(p)
@@ -173,41 +346,79 @@ class ShapeFitter:
                        if ckpt else self._table_chunk(verts, nhat, d, gamma))
         return torch.cat(out, 0)
 
-    # ---- forward + residuals -------------------------------------------------
-    def curves(self, p, gamma, table=None, ckpt=False):
-        """(N, C) un-normalized brightness. Passing a detached `table` gives
-        the frozen-visibility model (values exact at the point where the
-        table was built; derivatives ignore d(vis)/dp)."""
+    # ---- forward + residuals ----------------------------------*
+
+    def curves_all(self, p, gamma, table=None, ckpt=False, want_bin=True):
         v, areas, nhat = self._geom(p)
         if table is None:
             table = self._table(v, nhat, gamma, ckpt=ckpt)
-        out = []
+        want_bin = want_bin and (self.data_bin is not None)
+        oi, ob = [], []
         for i in range(0, self.N, self.frame_chunk):
             j = i + self.frame_chunk
-            out.append(_integrate_chunk(
-                areas, nhat, self.sun_dirs[i:j], self.view_dirs[i:j],
-                table, self.inv_sun[i:j], self.inv_view[i:j], self.brdf_type))
-        return torch.cat(out, 0)
+            args = (areas, nhat, self.sun_dirs[i:j], self.view_dirs[i:j],
+                    table, self.inv_sun[i:j], self.inv_view[i:j])
+            oi.append(_integrate_chunk(*args, self.brdf_type))
+            if want_bin:
+                ob.append(_integrate_chunk_binary(
+                    *args, self.tau_bin, self.beta_bin, self.brdf_type))
+        return torch.cat(oi, 0), (torch.cat(ob, 0) if want_bin else None)
+
+    def curves(self, p, gamma, table=None, ckpt=False):   # back-compat
+        return self.curves_all(p, gamma, table, ckpt, want_bin=False)[0]
 
     def residuals(self, p, gamma, table=None, ckpt=False):
-        B = self.curves(p, gamma, table=table, ckpt=ckpt)
-        model = B / B.mean(dim=0, keepdim=True)     # same normalization as data
-        r_ph = ((model - self.data) * self.w).reshape(-1)
-        r_lap = self.lam_lap * (self.L @ p)
-        r_scale = self.lam_scale * p.mean().reshape(1)
-        return torch.cat([r_ph, r_lap, r_scale])
+        B, Bb = self.curves_all(
+            p, gamma, table=table, ckpt=ckpt
+        )
+
+        model = B / B.mean(
+            dim=0, keepdim=True
+        ).clamp_min(1e-9)
+
+        parts = [
+            ((model - self.data) * self.w).reshape(-1)
+        ]
+
+        if Bb is not None:
+            model_bin = Bb / Bb.mean(
+                dim=0, keepdim=True
+            ).clamp_min(1e-9)
+
+            parts.append(
+                (
+                    (model_bin - self.data_bin)
+                    * self.w_bin
+                ).reshape(-1)
+            )
+
+        parts.append(self.shape_prior(p))
+        return torch.cat(parts)
 
     @torch.no_grad()
-    def photo_cost(self, p, gamma):
-        B = self.curves(p, gamma)
-        model = B / B.mean(dim=0, keepdim=True)
-        return float((((model - self.data) * self.w) ** 2).sum())
+    def photo_cost(self, p, gamma):                 # now includes binary,
+        r = self.residuals(p, gamma)                # so the ellipsoid init
+        return float((r[:self.n_photo] ** 2).sum())
 
     def subsampled(self, stride):
-        """Cheap fitter on every `stride`-th frame (init search, previews)."""
-        return ShapeFitter(self.data[::stride], self.angles[::stride],
-                           self.sun_dir0, self.view_dirs0,
-                           w_curve=self.w.flatten(), **self._cfg)
+        return ShapeFitter(
+            self.data[::stride],
+            self.angles[::stride],
+            self.sun_dir0,
+            self.view_dirs0,
+            data_bin=(
+                None
+                if self.data_bin is None
+                else self.data_bin[::stride]
+            ),
+            w_curve=self.w.flatten(),
+            w_bin=(
+                None
+                if self.w_bin is None
+                else self.w_bin.flatten()
+            ),
+            **self._cfg,
+        )
 
 # --------------------------------------------------------------------------- #
 # 1) Initial guess
@@ -242,7 +453,21 @@ def generate_initial_guess(fitter, *, ab=None, cb_grid=(0.7, 0.85, 1.0),
     for cb in cb_grid:
         for k in range(n_theta):
             theta = math.pi * k / n_theta
-            p_try = ellipsoid_log_radius(fitter.dirs_t, ab, 1.0, cb, theta)
+
+            log_radius = ellipsoid_log_radius(
+                fitter.dirs_t,
+                ab,
+                1.0,
+                cb,
+                theta,
+            )
+
+            if fitter.representation == "star":
+                p_try = log_radius
+            else:
+                p_try = fitter.octantoid.from_log_radius(
+                    log_radius
+                )
             cost = coarse.photo_cost(p_try, gamma)
             if cost < best[0]:
                 best = (cost, p_try, (cb, theta))
@@ -379,32 +604,54 @@ def solve(fitter, p0, stages=None, lam0=1e-2, max_retries=10,
     """
     if stages is None:
         stages = [
-            dict(gamma=0.06,  iters=6,  method="frozen"),
-            dict(gamma=0.03,  iters=10, method="frozen"),
-            dict(gamma=0.015, iters=8,  method="frozen"),
-            # optional exact polish (uncomment if concavities underfit):
-            # dict(gamma=0.015, iters=3, method="cg",
-            #      update_kwargs=dict(cg_iters=40, cg_tol=1e-3)),
+            dict(gamma=0.06,  iters=6,  method="frozen", beta_bin=6.0),   # proportions
+            dict(gamma=0.03,  iters=8,  method="frozen", beta_bin=12.0),
+            dict(gamma=0.015, iters=8,  method="cg",     beta_bin=25.0,   # carve
+                 update_kwargs=dict(cg_iters=40, cg_tol=1e-3)),           # concavities
         ]
+
     p, lam, history = p0.clone(), lam0, []
     for si, st in enumerate(stages):
-        gamma, method = st["gamma"], st.get("method", "frozen")
+        gamma = st["gamma"]
+        method = st.get("method", "frozen")
         kw = st.get("update_kwargs", {})
+
+        if "beta_bin" in st:
+            fitter.beta_bin = float(st["beta_bin"])
         for it in range(st["iters"]):
             with torch.no_grad():
                 r = fitter.residuals(p, gamma)
                 cost = 0.5 * float(r @ r)
             lin, accepted, rho, cost_new = None, False, float("nan"), cost
             for _ in range(max_retries):
-                delta, pred, lin = compute_update(fitter, p, gamma, lam,
-                                                  method=method, lin=lin, **kw)
+                delta, pred, lin = compute_update(
+                    fitter,
+                    p,
+                    gamma,
+                    lam,
+                    method=method,
+                    lin=lin,
+                    **kw,
+                )
+
+                p_trial = fitter.project_parameters(p + delta)
+                delta_used = p_trial - p
+
                 with torch.no_grad():
-                    r_new = fitter.residuals(p + delta, gamma)
+                    r_new = fitter.residuals(p_trial, gamma)
                     cost_new = 0.5 * float(r_new @ r_new)
+
                 rho = (cost - cost_new) / max(pred, 1e-30)
+
                 if math.isfinite(cost_new) and rho > 1e-3:
-                    p = (p + delta).clamp(-2.0, 2.0)          # radius safety
-                    lam = max(lam * max(1/3, 1 - (2*rho - 1)**3), 1e-12)
+                    p = p_trial
+                    lam = max(
+                        lam * max(
+                            1.0 / 3.0,
+                            1.0 - (2.0 * rho - 1.0) ** 3,
+                        ),
+                        1e-12,
+                    )
                     accepted = True
                     break
                 lam = min(lam * 4.0, 1e9)
@@ -629,4 +876,4 @@ def test_fit(model_num=1, n_frames=840, fit_stride=3, noise=0.01,
 
 
 if __name__ == "__main__":
-    test_fit(model_num=1)   # falls back to a synthetic potato if data missing
+    test_fit(model_num=3)   # falls back to a synthetic potato if data missing

@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
-
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -67,7 +67,6 @@ def load_asteroid_mesh(model_num: int, device: torch.device):
     verts = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
     faces = torch.tensor(mesh.faces, dtype=torch.long, device=device)
     return verts, faces
-
 
 def load_data(
     model_num: int,
@@ -180,7 +179,7 @@ def _soft_visibility(
     inv_det = torch.where(degenerate, torch.zeros_like(det), 1.0 / safe_det)
 
     qx = centroids[:, 0:1]
-    qy = centroids[:, 1:1]
+    qy = centroids[:, 1:2]
 
     dpx = qx - x0.unsqueeze(0)
     dpy = qy - y0.unsqueeze(0)
@@ -212,13 +211,12 @@ def _soft_visibility(
 
     z_query = (z0 + z1 + z2) / 3.0
 
-    logits = z_interp / gamma
-    logits_query = z_query / gamma
-    max_logit = torch.maximum(logits.max(dim=1).values, logits_query)
-    exp_others = (inside * torch.exp(logits - max_logit.unsqueeze(1))).sum(dim=1)
-    exp_query = torch.exp(logits_query - max_logit)
-    vis = exp_query / (exp_query + exp_others)
-    return vis
+    return _visibility_from_depths(
+        inside=inside,
+        z_interp=z_interp,
+        z_query=z_query,
+        gamma=gamma,
+    )
 
 
 def _direction_visibility(
@@ -346,18 +344,21 @@ def compute_lightcurve(
     cull = False if use_compile else cull_backfaces
 
     brightness = torch.zeros(N, device=verts.device, dtype=verts.dtype)
+    values = []
     for k in range(N):
-        brightness[k] = fn(
-            verts,
-            faces,
-            sun_dirs[k],
-            view_dirs[k],
-            gamma=gamma,
-            eps=eps,
-            brdf_type=brdf_type,
-            cull_backfaces=cull,
+        values.append(
+            fn(
+                verts,
+                faces,
+                sun_dirs[k],
+                view_dirs[k],
+                gamma=gamma,
+                eps=eps,
+                brdf_type=brdf_type,
+                cull_backfaces=cull_backfaces,
+            )
         )
-    return brightness
+    return torch.stack(values)
 
 
 # --------------------------------------------------------------------------- #
@@ -373,6 +374,40 @@ def _rotate_dirs_z(d0: torch.Tensor, psi: torch.Tensor) -> torch.Tensor:
     yr = -s * x + c * y
     return torch.stack([xr, yr, z.expand_as(xr)], dim=-1)
 
+def _visibility_from_depths(
+    inside: torch.Tensor,
+    z_interp: torch.Tensor,
+    z_query: torch.Tensor,
+    gamma: float,
+) -> torch.Tensor:
+    """
+    Compute
+
+        V_i = 1 / (1 + sum_j c_ij exp((z_ij - z_i) / gamma))
+
+    using a softmax with an explicit self logit of zero.
+
+    `inside` and `z_interp` have shape (..., Q, O), while `z_query`
+    has shape (..., Q). Larger z is closer.
+    """
+    tiny = torch.finfo(inside.dtype).tiny
+
+    log_coverage = torch.where(
+        inside > 0.0,
+        torch.log(inside.clamp_min(tiny)),
+        torch.full_like(inside, -torch.inf),
+    )
+
+    other_logits = (
+        log_coverage
+        + (z_interp - z_query.unsqueeze(-1)) / gamma
+    )
+
+    # The self-contribution is exactly exp(0) = 1.
+    self_logits = torch.zeros_like(z_query).unsqueeze(-1)
+    logits = torch.cat([self_logits, other_logits], dim=-1)
+
+    return torch.softmax(logits, dim=-1)[..., 0]
 
 def _soft_visibility_batch(face_xy, face_z, gamma, eps, valid=None):
     """Batched soft visibility: (B, K, 3, 2) and (B, K, 3) -> (B, K)."""
@@ -411,12 +446,16 @@ def _soft_visibility_batch(face_xy, face_z, gamma, eps, valid=None):
     )
 
     eye = torch.eye(K, dtype=torch.bool, device=face_z.device)
-    inside = inside.masked_fill(eye, 0.0)
+    inside = inside.masked_fill(eye.unsqueeze(0), 0.0)
 
     z_query = (z0 + z1 + z2) / 3.0
-    delta = (z_interp - z_query.unsqueeze(2)) / gamma
-    w = (inside * torch.exp(delta.clamp(max=60.0))).sum(dim=2)
-    return 1.0 / (1.0 + w)
+
+    return _visibility_from_depths(
+        inside=inside,
+        z_interp=z_interp,
+        z_query=z_query,
+        gamma=gamma,
+    )
 
 
 def _visibility_chunk(
@@ -527,6 +566,49 @@ def _integrate_chunk(areas, nhat, sun_dirs, view_dirs, vis_table, inv_sun, inv_v
         scatter = 0.5 * l * (1.0 + 1.0 / (mu0[:, None, :] + mu + 1e-8))
     return torch.einsum("ncf,nf->nc", scatter * vis, areas[None, :] * ill)
 
+def _integrate_chunk_binary(
+    areas,
+    nhat,
+    sun_dirs,
+    view_dirs,
+    vis_table,
+    inv_sun,
+    inv_view,
+    tau,
+    beta,
+    brdf_type="combined",
+):
+    ill = vis_table[inv_sun]
+    vis = vis_table[inv_view]
+
+    mu0 = torch.einsum("fi,ni->nf", nhat, sun_dirs).clamp_min(0.0)
+    mu = torch.einsum("fi,nci->ncf", nhat, view_dirs).clamp_min(0.0)
+    m0 = mu0[:, None, :]
+
+    if brdf_type == "lambertian":
+        radiance = m0
+    elif brdf_type == "lommel_seeliger":
+        radiance = m0 / (m0 + mu + 1e-8)
+    else:
+        radiance = 0.5 * m0 * (
+            1.0 + 1.0 / (m0 + mu + 1e-8)
+        )
+
+    radiance = radiance * ill[:, None, :]
+
+    tau_t = torch.as_tensor(
+        tau, dtype=radiance.dtype, device=radiance.device
+    )
+    beta_t = torch.as_tensor(
+        beta, dtype=radiance.dtype, device=radiance.device
+    )
+
+    s = torch.sigmoid(beta_t * (radiance - tau_t))
+    s0 = torch.sigmoid(-beta_t * tau_t)
+
+    lit = ((s - s0) / (1.0 - s0).clamp_min(1e-8)).clamp_min(0.0)
+
+    return torch.einsum("ncf,f->nc", mu * vis * lit, areas)
 
 def compute_lightcurves_multicam(
     verts,
@@ -644,7 +726,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     target_model = 3
     N = 842
-    origin = "real"
+    origin = "blender"
     curve_type = "intensity"
     target_column = "45_hor1"
 
