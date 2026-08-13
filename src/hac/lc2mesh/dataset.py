@@ -47,7 +47,7 @@ def create_spherical_prior(
     subdivisions: int = 3,
     radius: float = 1.0,
     device: torch.device | None = None,
-    dtype: torch.dtype = torch.float64,
+    dtype: torch.dtype = torch.float32,
 ) -> SphericalMeshPrior:
     """Create a unit icosphere mesh as the spherical prior.
 
@@ -71,7 +71,7 @@ def create_spherical_prior(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     sphere = trimesh.creation.icosphere(subdivisions=subdivisions, radius=radius)
-    vertices_np = np.asarray(sphere.vertices, dtype=np.float64)
+    vertices_np = np.asarray(sphere.vertices, dtype=np.float32)
     faces_np = np.asarray(sphere.faces, dtype=np.int64)
 
     vertices = torch.as_tensor(vertices_np, dtype=dtype, device=device)
@@ -106,7 +106,7 @@ def load_asteroid_data(
     curve_type: str = "intensity",
     phase_direction: float = 1.0,
     device: torch.device | None = None,
-    dtype: torch.dtype = torch.float64,
+    dtype: torch.dtype = torch.float32,
 ) -> AsteroidData:
     """Load real lightcurve observations for a given asteroid.
 
@@ -142,7 +142,7 @@ def load_asteroid_data(
     observed_df = ds_real.data.copy()
 
     observed = torch.as_tensor(
-        observed_df[camera_names].to_numpy(dtype=np.float64, copy=True).T,
+        observed_df[camera_names].to_numpy(dtype=np.float32, copy=True).T,
         dtype=dtype,
         device=device,
     )

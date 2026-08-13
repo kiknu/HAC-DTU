@@ -33,7 +33,7 @@ def create_icosphere(subdivisions: int = 2) -> tuple[np.ndarray, np.ndarray]:
             [-phi, 0, -1],
             [-phi, 0, 1],
         ],
-        dtype=np.float64,
+        dtype=np.float32,
     )
     verts = list(raw / np.linalg.norm(raw[0]))
 
@@ -167,7 +167,7 @@ def create_ellipsoidal_prior_mesh(
     # Deform the base icosphere to the desired asteroid archetype
     sphere_verts = _apply_shape_deformation(sphere_verts, shape_type)
 
-    scale_xyz = np.array([R_cylinder, R_cylinder, 1.0], dtype=np.float64)
+    scale_xyz = np.array([R_cylinder, R_cylinder, 1.0], dtype=np.float32)
     sphere_verts = sphere_verts * scale_xyz[None, :]
 
     normals, sigma = _compute_face_geometry(sphere_verts, sphere_faces)

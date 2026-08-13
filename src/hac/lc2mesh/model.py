@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+
 import torch
 import torch.nn as nn
 
@@ -39,7 +40,7 @@ class SirenLayer(nn.Module):
         return y if self.is_last else torch.sin(self.w0 * y)
 
 
-class NeRPRadialNetwork(nn.Module):
+class RadialNetwork(nn.Module):
     """Pure SIREN deformation field driven by raw 3D spatial coordinates."""
 
     def __init__(
@@ -49,12 +50,10 @@ class NeRPRadialNetwork(nn.Module):
         depth: int = 8,
         first_w0: float = 15.0,
         w0: float = 30.0,
-        out_scale: float = 0.35,
         out_dim: int = 1,
-        output_activation: str = "tanh",
+        output_activation: str = "identity",
     ):
         super().__init__()
-        self.out_scale = float(out_scale)
         self.out_dim = int(out_dim)
         if output_activation not in {"tanh", "identity"}:
             raise ValueError("output_activation must be 'tanh' or 'identity'")
@@ -74,29 +73,21 @@ class NeRPRadialNetwork(nn.Module):
         displacement = self.model(x)
         if self.output_activation == "tanh":
             displacement = torch.tanh(displacement)
-        displacement = self.out_scale * displacement
         return displacement.squeeze(-1) if self.out_dim == 1 else displacement
 
 
-class LightcurveToMesh(nn.Module):
-    """
-    Coarse+detail SIREN deformation field over a star-shaped prior mesh.
-    Relies on explicit loss functions (Laplacian, Edge-length) for regularization
-    rather than internal forward-pass smoothing.
+class INR(nn.Module):
+    """Stage 1: single coarse SIREN deformation field over a star-shaped prior mesh.
 
-    Parameterization notes (defaults chosen to avoid the boxy / range-capped
-    artifacts of the legacy configuration):
+    Produces the coarse INR mesh that Stage 2 (``MeshRefinementGCN``) refines.
+    Relies on explicit loss functions for regularization rather than internal
+    forward-pass smoothing.
 
-    - ``input_encoding='direction'``: the SIRENs see unit directions
-      ``v/|v|`` instead of raw ellipsoid coordinates. Raw coordinates span
-      different ranges per axis (R, R, 1), giving the field an axis-aligned
-      anisotropic frequency response — a structural bias toward boxy,
-      axis-aligned geometry. Unit directions make the input domain isotropic.
-    - ``output_activation='identity'``: no hard tanh cap. A saturating tanh
-      produces plateaus of constant maximal displacement with sharp
-      transitions (flat, boxy patches) whenever the target needs more than
-      ``max_radius_perturb``; with 'identity', ``max_radius_perturb`` is a
-      soft initial gain instead of a hard bound.
+    Parameterization notes:
+
+    - ``input_encoding='direction'``: the SIREN sees unit directions ``v/|v|``
+      instead of raw ellipsoid coordinates, keeping the input domain isotropic
+      (raw coordinates span (R, R, 1) per axis and bias toward boxy geometry).
     - ``deformation_mode='radial'``: multiplicative log-radial map
       ``v -> v * exp(field)``. Unbounded outward growth, radius always
       positive, mesh stays star-shaped (no fold-overs / tangential drift).
@@ -105,12 +96,7 @@ class LightcurveToMesh(nn.Module):
     - Learnable anisotropic global scale ``exp(log_global_scale)`` (3,): lets
       the mesh stretch beyond the prior's cylinder bounds per axis without
       saturating the INR. Axis *ratios* are observable from mean-normalized
-      lightcurves; a uniform scale is not (it cancels in the normalization),
-      so absolute size must come from the evaluation frame, not the loss.
-    - Lower default frequencies (coarse_w0=5, detail_w0=15): biases the field
-      toward smooth low-order shapes. Predicted curves are low-pass filtered
-      before the loss, so w0=30 mostly added unconstrained high-frequency
-      creases.
+      lightcurves; a uniform scale is not (it cancels in the normalization).
     """
 
     def __init__(
@@ -118,14 +104,9 @@ class LightcurveToMesh(nn.Module):
         inr_hidden_dim: int = 256,
         inr_num_layers: int = 8,
         coarse_w0: float = 5.0,  # Low frequency for smooth base structure
-        detail_w0: float = 15.0,  # Moderate frequency for surface detail
-        max_radius_perturb: float = 0.35,
-        use_learnable_temperature: bool = True,
-        initial_temperature: float = 1.0,
         deformation_mode: str = "radial",
         output_activation: str = "identity",
         input_encoding: str = "direction",
-        use_global_scale: bool = True,
     ):
         super().__init__()
         if deformation_mode not in {"radial", "normal", "vector"}:
@@ -136,43 +117,15 @@ class LightcurveToMesh(nn.Module):
         self.input_encoding = input_encoding
         field_dim = 3 if deformation_mode == "vector" else 1
 
-        coarse_depth = max(4, inr_num_layers - 2)
-        self.coarse_deformer = NeRPRadialNetwork(
-            in_dim=3,
-            hidden_dim=inr_hidden_dim,
-            depth=coarse_depth,
-            first_w0=coarse_w0,
-            w0=coarse_w0,
-            out_scale=0.75 * max_radius_perturb,
-            out_dim=field_dim,
-            output_activation=output_activation,
-        )
-        self.detail_deformer = NeRPRadialNetwork(
+        self.coarse_deformer = RadialNetwork(
             in_dim=3,
             hidden_dim=inr_hidden_dim,
             depth=inr_num_layers,
-            first_w0=detail_w0,
-            w0=detail_w0,
-            out_scale=0.25 * max_radius_perturb,
+            first_w0=coarse_w0,
+            w0=coarse_w0,
             out_dim=field_dim,
             output_activation=output_activation,
         )
-
-        if use_learnable_temperature:
-            self.log_temperature = nn.Parameter(
-                torch.tensor(float(initial_temperature)).log()
-            )
-        else:
-            self.register_buffer(
-                "log_temperature", torch.tensor(1.0).log()
-            )
-
-        # Anisotropic global scale (init 1.0 per axis). Lets the deformed mesh
-        # leave the prior's cylinder bounds without saturating the INR field.
-        if use_global_scale:
-            self.log_global_scale = nn.Parameter(torch.zeros(3))
-        else:
-            self.register_buffer("log_global_scale", torch.zeros(3))
 
     def _apply_input_encoding(self, base_vertices: torch.Tensor) -> torch.Tensor:
         if self.input_encoding == "direction":
@@ -180,7 +133,12 @@ class LightcurveToMesh(nn.Module):
         else:  # raw
             return base_vertices
 
-    def _apply_deformation(self, base_vertices: torch.Tensor, field: torch.Tensor, vertex_normals: torch.Tensor | None) -> torch.Tensor:
+    def _apply_deformation(
+        self,
+        base_vertices: torch.Tensor,
+        field: torch.Tensor,
+        vertex_normals: torch.Tensor | None,
+    ) -> torch.Tensor:
         if self.deformation_mode == "radial":
             return base_vertices * torch.exp(field).unsqueeze(-1)
         elif self.deformation_mode == "normal":
@@ -206,14 +164,197 @@ class LightcurveToMesh(nn.Module):
         """
         x = self._apply_input_encoding(base_vertices)
         field = self.coarse_deformer(x)
-        field = torch.exp(self.log_temperature) * field
         vertices = self._apply_deformation(base_vertices, field, vertex_normals)
 
-        field = self.detail_deformer(x)
-        field = torch.exp(self.log_temperature) * field
-        vertices = self._apply_deformation(vertices, field, vertex_normals)
-
-        vertices = vertices * torch.exp(self.log_global_scale)
         residual = vertices - base_vertices
 
         return vertices, residual
+
+
+def build_normalized_adjacency(faces: torch.Tensor, num_vertices: int) -> torch.Tensor:
+    """Sparse symmetric-normalized adjacency ``A_hat = D^-1/2 (A + I) D^-1/2``.
+
+    Nodes are mesh vertices; undirected edges come from the fixed triangle
+    topology. Returns a coalesced sparse COO tensor [V, V] on ``faces.device``
+    with the current default dtype.
+    """
+    f = faces.long()
+    device = f.device
+    # Both orientations of the three edges of every triangle + self-loops.
+    src = torch.cat([f[:, 0], f[:, 1], f[:, 2], f[:, 1], f[:, 2], f[:, 0]])
+    dst = torch.cat([f[:, 1], f[:, 2], f[:, 0], f[:, 0], f[:, 1], f[:, 2]])
+    loops = torch.arange(num_vertices, device=device)
+    idx = torch.stack([torch.cat([src, loops]), torch.cat([dst, loops])], dim=0)
+    ones = torch.ones(idx.shape[1], device=device)
+    adj = torch.sparse_coo_tensor(idx, ones, (num_vertices, num_vertices)).coalesce()
+
+    # coalesce() summed duplicate edges (each edge is shared by two faces);
+    # binarize back to A + I before normalizing.
+    idx = adj.indices()
+    vals = torch.ones_like(adj.values())
+    deg = torch.zeros(num_vertices, device=device, dtype=vals.dtype)
+    deg.index_add_(0, idx[0], vals)
+    d_inv_sqrt = deg.clamp_min(1.0).rsqrt()
+    vals = d_inv_sqrt[idx[0]] * vals * d_inv_sqrt[idx[1]]
+    return torch.sparse_coo_tensor(idx, vals, (num_vertices, num_vertices)).coalesce()
+
+
+class GraphConvolution(nn.Module):
+    """Single GCN layer ``H' = A_hat @ H @ W + b`` (Pixel2Mesh-style).
+
+    ``A_hat`` is the fixed sparse normalized adjacency (self-loops included),
+    so the layer is permutation-consistent with the mesh topology and
+    preserves the vertex count.
+    """
+
+    def __init__(self, in_dim: int, out_dim: int):
+        super().__init__()
+        self.weight = nn.Parameter(torch.empty(int(in_dim), int(out_dim)))
+        self.bias = nn.Parameter(torch.zeros(int(out_dim)))
+        nn.init.xavier_uniform_(self.weight)
+
+    def forward(self, x: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
+        """x: [V, C] or batched [B, V, C]; adjacency: sparse [V, V]."""
+        support = x @ self.weight
+        if support.dim() == 2:
+            out = torch.sparse.mm(adjacency, support)
+        else:
+            # Sparse mm is 2D-only; every batch element shares the topology.
+            out = torch.stack([torch.sparse.mm(adjacency, s) for s in support])
+        return out + self.bias
+
+
+class MeshGCN(nn.Module):
+    """Stage 2: predicts residual vertex displacements on the fixed mesh graph.
+
+    ``V_refined = V_inr + delta_V`` with ``delta_V = GCN(V_inr)``. Several
+    graph convolutions with ReLU nonlinearities, then a linear GCN output
+    layer producing 3D displacements. The output layer is initialized near
+    zero (``final_init_scale``) so refinement starts at the Stage-1 mesh.
+    """
+
+    def __init__(
+        self,
+        faces: torch.Tensor,
+        num_vertices: int,
+        in_dim: int = 3,
+        hidden_dim: int = 128,
+        num_layers: int = 6,
+        final_init_scale: float = 1e-3,
+    ):
+        super().__init__()
+        num_layers = max(2, int(num_layers))
+        dims = [int(in_dim)] + [int(hidden_dim)] * (num_layers - 1) + [3]
+        self.layers = nn.ModuleList(
+            GraphConvolution(dims[i], dims[i + 1]) for i in range(num_layers)
+        )
+        self.activations = nn.ModuleList(
+            nn.PReLU() for _ in range(num_layers - 1)
+        )
+        # Conservative output init: Stage 2 starts (almost) at the Stage-1 mesh.
+        with torch.no_grad():
+            self.layers[-1].weight.mul_(float(final_init_scale))
+            self.layers[-1].bias.zero_()
+        # Fixed topology -> adjacency is data, rebuilt at construction
+        # (persistent=False keeps the sparse tensor out of the state_dict).
+        self.register_buffer(
+            "adjacency",
+            build_normalized_adjacency(faces, num_vertices),
+            persistent=False,
+        )
+
+    def forward(self, vertices: torch.Tensor) -> torch.Tensor:
+        """vertices: (..., V, 3) -> displacement delta_V of the same shape."""
+        h = vertices
+        for act, layer in zip(self.activations, self.layers[:-1]):
+            h = act(layer(h, self.adjacency))
+        return self.layers[-1](h, self.adjacency)
+
+
+class LightcurveToMesh(nn.Module):
+    """Full two-stage reconstructor: coarse INR + graph-CNN refinement.
+
+    Two-stage optimization strategy:
+
+    - Phase 1 trains ``inr`` alone (lightcurve MSE + convex-hull Chamfer) to a
+      coarse, globally accurate mesh; ``gcn`` parameters stay untouched.
+    - Phase 2 trains ``inr`` and ``gcn`` jointly on the lightcurve loss of the
+      REFINED mesh only, with the INR in a much slower parameter group
+      (``lr_inr_stage2 << lr_graph``).
+
+    The whole pipeline is differentiable: Stage-2 lightcurve gradients flow
+    through the GCN and back into the INR.
+    """
+
+    def __init__(
+        self,
+        faces: torch.Tensor,
+        inr_hidden_dim: int = 256,
+        inr_num_layers: int = 8,
+        coarse_w0: float = 5.0,
+        deformation_mode: str = "radial",
+        output_activation: str = "identity",
+        input_encoding: str = "direction",
+        gcn_hidden_dim: int = 128,
+        gcn_num_layers: int = 6,
+        gcn_final_init_scale: float = 1e-3,
+        R: float = 1.0,
+    ):
+        super().__init__()
+        self.R = R
+        num_vertices = int(faces.max().item()) + 1
+        self.inr = INR(
+            inr_hidden_dim=inr_hidden_dim,
+            inr_num_layers=inr_num_layers,
+            coarse_w0=coarse_w0,
+            deformation_mode=deformation_mode,
+            output_activation=output_activation,
+            input_encoding=input_encoding,
+        )
+        self.gcn = MeshGCN(
+            faces=faces,
+            num_vertices=num_vertices,
+            in_dim=3,
+            hidden_dim=gcn_hidden_dim,
+            num_layers=gcn_num_layers,
+            final_init_scale=gcn_final_init_scale,
+        )
+
+    def canonicalize_to_cylinder(self, vertices: torch.Tensor) -> torch.Tensor:
+        """Differentiably gauge-fix vertices [V,3] to the challenge cylinder D(0,R) x [-1,1].
+
+        Enforces the three exact facts from the challenge metadata:
+        - containment: x^2 + y^2 <= R^2, |z| <= 1
+        - touching:    min(z) = -1 and max(z) = +1 (object meets both planes)
+        - tightness:   max(sqrt(x^2 + y^2)) = R (R is the minimal radius)
+
+        Differentiable analogue of normalize_mesh_to_challenge_cylinder
+        (center_xy="bounds"). Mean-normalized lightcurves cannot see uniform
+        scale, so this also removes the scale gauge freedom during training.
+        """
+        z = vertices[:, 2]
+        z_mid = 0.5 * (z.max() + z.min())
+        z_half = (0.5 * (z.max() - z.min())).clamp_min(1e-9)
+        xy = vertices[:, :2]
+        xy_mid = 0.5 * (xy.max(dim=0).values + xy.min(dim=0).values)
+        xy_c = xy - xy_mid
+        s_xy = self.R / xy_c.norm(dim=1).max().clamp_min(1e-9)
+        return torch.cat([xy_c * s_xy, ((z - z_mid) / z_half).unsqueeze(1)], dim=1)
+
+    def forward(
+        self,
+        base_vertices: torch.Tensor,
+        vertex_normals: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            base_vertices: (..., V, 3) prior mesh vertices.
+            vertex_normals: (..., V, 3), only used for ``deformation_mode='normal'``.
+        Returns:
+            vertices_inr: Stage-1 coarse mesh (..., V, 3).
+            vertices_refined: Stage-2 refined mesh ``vertices_inr + delta_V``.
+        """
+        vertices_inr, _ = self.inr(base_vertices, vertex_normals)
+        vertices_refined = vertices_inr + self.gcn(vertices_inr)
+        vertices_refined = self.canonicalize_to_cylinder(vertices_refined.squeeze(0)).unsqueeze(0)  # [B, V, 3] -> [B, V, 3] in cylinder frame
+        return vertices_inr, vertices_refined

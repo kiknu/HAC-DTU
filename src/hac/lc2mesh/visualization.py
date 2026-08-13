@@ -20,7 +20,7 @@ def _to_numpy_2d(x: np.ndarray | torch.Tensor, name: str) -> np.ndarray:
 
     if arr.ndim != 2:
         raise ValueError(f"{name} must have shape [n_cameras, n_phases], got {arr.shape}")
-    return arr.astype(np.float64, copy=False)
+    return arr.astype(np.float32, copy=False)
 
 
 def _to_numpy_mesh_vertices(x: np.ndarray | torch.Tensor, name: str) -> np.ndarray:
@@ -31,7 +31,7 @@ def _to_numpy_mesh_vertices(x: np.ndarray | torch.Tensor, name: str) -> np.ndarr
 
     if arr.ndim != 2 or arr.shape[1] != 3:
         raise ValueError(f"{name} must have shape [n_vertices, 3], got {arr.shape}")
-    return arr.astype(np.float64, copy=False)
+    return arr.astype(np.float32, copy=False)
 
 
 def _to_numpy_mesh_faces(x: np.ndarray | torch.Tensor, name: str) -> np.ndarray:
@@ -53,7 +53,7 @@ def _to_numpy_triangles(x: np.ndarray | torch.Tensor, name: str) -> np.ndarray:
 
     if arr.ndim != 3 or arr.shape[1:] != (3, 3):
         raise ValueError(f"{name} must have shape [n_faces, 3, 3], got {arr.shape}")
-    return arr.astype(np.float64, copy=False)
+    return arr.astype(np.float32, copy=False)
 
 
 def triangles_to_vertices_faces(
@@ -78,14 +78,14 @@ def triangles_to_vertices_faces(
     if tri.ndim != 3 or tri.shape[1:] != (3, 3):
         raise ValueError(f"triangles must have shape [n_faces, 3, 3], got {tri.shape}")
 
-    tri = tri.astype(np.float64, copy=False)
+    tri = tri.astype(np.float32, copy=False)
     n_faces = int(tri.shape[0])
     verts_flat = tri.reshape(-1, 3)
 
     verts_key = np.round(verts_flat, decimals=int(dedup_decimals))
     unique_key, inverse = np.unique(verts_key, axis=0, return_inverse=True)
     faces = inverse.reshape(n_faces, 3).astype(np.int64, copy=False)
-    vertices = unique_key.astype(np.float64, copy=False)
+    vertices = unique_key.astype(np.float32, copy=False)
     return vertices, faces
 
 
@@ -151,7 +151,7 @@ def plot_interactive_mesh_3d(
             fa = facet_areas.detach().cpu().numpy()
         else:
             fa = np.asarray(facet_areas)
-        fa = fa.reshape(-1).astype(np.float64, copy=False)
+        fa = fa.reshape(-1).astype(np.float32, copy=False)
         if fa.shape[0] != f.shape[0]:
             raise ValueError(
                 f"facet_areas must have length {f.shape[0]}, got {fa.shape[0]}"
@@ -332,8 +332,8 @@ def plot_lightcurve_comparison(
     target_cam_id: int | str = 0,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot flattened curves with a non-overlapping zoom panel for one camera."""
-    obs = np.asarray(obs_norm, dtype=np.float64)
-    pred = np.asarray(pred_norm, dtype=np.float64)
+    obs = np.asarray(obs_norm, dtype=np.float32)
+    pred = np.asarray(pred_norm, dtype=np.float32)
 
     if obs.shape != pred.shape:
         raise ValueError(f"Shape mismatch: obs {obs.shape}, pred {pred.shape}")
@@ -406,10 +406,10 @@ def plot_camera_grid(
         )
 
     if phase_axis is None:
-        x = np.arange(n_phases, dtype=np.float64)
+        x = np.arange(n_phases, dtype=np.float32)
         x_label = "Phase sample"
     else:
-        x = np.asarray(phase_axis, dtype=np.float64).reshape(-1)
+        x = np.asarray(phase_axis, dtype=np.float32).reshape(-1)
         if x.size != n_phases:
             raise ValueError(
                 f"phase_axis length mismatch: expected {n_phases}, got {x.size}"

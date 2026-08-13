@@ -24,7 +24,7 @@ def observer_geometry_to_unit_vector(
     alpha_deg: float,
     *,
     device: torch.device | None = None,
-    dtype: torch.dtype = torch.float64,
+    dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """Convert HAC observer angles to a unit direction vector."""
     theta = torch.deg2rad(
@@ -47,7 +47,7 @@ def observers_to_unit_tensor(
     observer_map: Mapping[str, object],
     *,
     device: torch.device | None = None,
-    dtype: torch.dtype = torch.float64,
+    dtype: torch.dtype = torch.float32,
 ) -> tuple[list[str], torch.Tensor]:
     """Build ordered observer names and stacked observer vectors."""
     names = list(observer_map.keys())
@@ -67,11 +67,11 @@ def load_stl_geometry_torch(
     stl_path: str | Path,
     *,
     device: torch.device | None = None,
-    dtype: torch.dtype = torch.float64,
+    dtype: torch.dtype = torch.float32,
 ) -> dict[str, torch.Tensor]:
     """Load STL triangles and derived geometric tensors as torch tensors."""
     stl_mesh = mesh.Mesh.from_file(str(stl_path))
-    triangles_np = stl_mesh.vectors.astype(np.float64)
+    triangles_np = stl_mesh.vectors.astype(np.float32)
 
     edge1 = triangles_np[:, 1, :] - triangles_np[:, 0, :]
     edge2 = triangles_np[:, 2, :] - triangles_np[:, 0, :]
@@ -133,59 +133,21 @@ def fourier_lowpass_periodic(
 
 
 class AsteroidForwardModel(torch.nn.Module):
-    """Differentiable LS+Lambert asteroid forward operator implemented in PyTorch.
-
-    Supports:
-    - ``visibility_mode='convex'``: classical ``mu > 0`` and ``mu0 > 0`` visibility.
-    - ``visibility_mode='nonconvex'``: approximate self-occlusion via centroid z-buffer
-      masks for both observer and sun directions.
-    """
+    """Differentiable LS+Lambert asteroid forward operator implemented in PyTorch."""
 
     def __init__(
         self,
         normals: torch.Tensor,
         *,
-        facet_centroids: torch.Tensor | None = None,
-        visibility_mode: str = "convex",
-        occlusion_method: str = "zbuffer",
-        zbuffer_grid: int = 64,
-        zbuffer_depth_tol: float = 1e-4,
-        occlusion_stride: int = 8,
         lambert_weight: float = 0.1,
-        alpha0: float = float(np.deg2rad(30.0)),
-        k_phase: float = 0.02,
         eps: float = 1e-12,
     ) -> None:
         super().__init__()
-        normals_t = normalize_vectors(normals.to(dtype=torch.float64), dim=1, eps=eps)
+        normals_t = normalize_vectors(normals.to(dtype=torch.float32), dim=1, eps=eps)
         self.register_buffer("normals", normals_t)
 
         self.lambert_weight = float(lambert_weight)
-        self.alpha0 = float(alpha0)
-        self.k_phase = float(k_phase)
         self.eps = float(eps)
-
-        self.visibility_mode = str(visibility_mode).lower()
-        if self.visibility_mode not in {"convex", "nonconvex"}:
-            raise ValueError("visibility_mode must be one of {'convex', 'nonconvex'}")
-
-        self.occlusion_method = str(occlusion_method).lower()
-        self.zbuffer_grid = int(max(8, zbuffer_grid))
-        self.zbuffer_depth_tol = float(max(0.0, zbuffer_depth_tol))
-        self.occlusion_stride = int(max(1, occlusion_stride))
-
-        if facet_centroids is not None:
-            centroids_t = facet_centroids.to(dtype=torch.float64)
-            if centroids_t.shape != (self.n_facets, 3):
-                raise ValueError(
-                    f"facet_centroids must have shape ({self.n_facets}, 3), got {tuple(centroids_t.shape)}"
-                )
-            self.register_buffer("centroids", centroids_t)
-        else:
-            self.centroids = None
-
-        if self.visibility_mode == "nonconvex" and self.centroids is None:
-            raise ValueError("facet_centroids must be provided when visibility_mode='nonconvex'")
 
     @property
     def n_facets(self) -> int:
@@ -210,136 +172,6 @@ class AsteroidForwardModel(torch.nn.Module):
             return torch.stack([x, y, z], dim=-1)
 
         raise ValueError("vectors must have shape [3] or [N, 3]")
-
-    def _zbuffer_visibility_mask(
-        self,
-        direction: torch.Tensor,
-        candidate_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """Approximate non-convex visibility using projected centroid depth competition."""
-        cand = candidate_mask.bool().reshape(-1)
-        idx = torch.nonzero(cand, as_tuple=False).reshape(-1)
-        if idx.numel() <= 1:
-            return cand
-
-        if self.centroids is None:
-            return cand
-
-        d = normalize_vectors(direction.reshape(1, 3), dim=1, eps=self.eps)[0]
-        if float(torch.abs(d[0]).item()) < 0.9:
-            ref = torch.tensor([1.0, 0.0, 0.0], dtype=d.dtype, device=d.device)
-        else:
-            ref = torch.tensor([0.0, 1.0, 0.0], dtype=d.dtype, device=d.device)
-
-        u = torch.cross(d, ref, dim=0)
-        un = torch.linalg.norm(u)
-        if float(un.item()) < self.eps:
-            ref = torch.tensor([0.0, 0.0, 1.0], dtype=d.dtype, device=d.device)
-            u = torch.cross(d, ref, dim=0)
-            un = torch.linalg.norm(u)
-            if float(un.item()) < self.eps:
-                return cand
-
-        u = u / un
-        v = torch.cross(d, u, dim=0)
-
-        pts = self.centroids.index_select(0, idx)
-        x = pts @ u
-        y = pts @ v
-        depth = pts @ d
-
-        x_min = torch.min(x)
-        x_max = torch.max(x)
-        y_min = torch.min(y)
-        y_max = torch.max(y)
-        x_span = x_max - x_min
-        y_span = y_max - y_min
-
-        if float(x_span.item()) < self.eps or float(y_span.item()) < self.eps:
-            return cand
-
-        g = self.zbuffer_grid
-        ix = torch.clamp(
-            ((x - x_min) / x_span.clamp_min(self.eps) * (g - 1)).long(),
-            0,
-            g - 1,
-        )
-        iy = torch.clamp(
-            ((y - y_min) / y_span.clamp_min(self.eps) * (g - 1)).long(),
-            0,
-            g - 1,
-        )
-        cell = iy * g + ix
-
-        max_depth = torch.full(
-            (g * g,),
-            -torch.inf,
-            dtype=depth.dtype,
-            device=depth.device,
-        )
-
-        if hasattr(max_depth, "scatter_reduce_"):
-            max_depth.scatter_reduce_(0, cell, depth, reduce="amax", include_self=True)
-        else:
-            unique_cell = torch.unique(cell)
-            for c in unique_cell:
-                mask = cell == c
-                max_depth[c] = torch.max(depth[mask])
-
-        depth_span = torch.max(depth) - torch.min(depth)
-        tol = self.zbuffer_depth_tol * torch.clamp(depth_span, min=1.0)
-        visible_local = depth >= (max_depth[cell] - tol)
-
-        out = torch.zeros_like(cand)
-        out[idx] = visible_local
-        return out
-
-    def _visibility_mask(
-        self,
-        direction: torch.Tensor,
-        candidate_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """Dispatch non-convex visibility approximation."""
-        if self.occlusion_method == "zbuffer":
-            return self._zbuffer_visibility_mask(direction=direction, candidate_mask=candidate_mask)
-        return candidate_mask.bool()
-
-    def _interpolate_visibility_periodic(
-        self,
-        sample_idx: torch.Tensor,
-        sampled_mask: torch.Tensor,
-        n_phase: int,
-    ) -> torch.Tensor:
-        """Periodic interpolation of sampled visibility masks to full phase resolution."""
-        if int(sample_idx.numel()) == int(n_phase):
-            return sampled_mask.bool()
-
-        x = torch.cat(
-            [
-                sample_idx.to(dtype=torch.float64),
-                sample_idx[:1].to(dtype=torch.float64) + float(n_phase),
-            ],
-            dim=0,
-        )
-
-        vals = torch.cat(
-            [sampled_mask.to(dtype=torch.float64), sampled_mask[:, :1, :].to(dtype=torch.float64)],
-            dim=1,
-        )
-
-        target = torch.arange(n_phase, dtype=torch.float64, device=sample_idx.device)
-        right = torch.searchsorted(x, target, right=True)
-        right = torch.clamp(right, min=1, max=x.numel() - 1)
-        left = right - 1
-
-        x_left = x[left]
-        x_right = x[right]
-        t = ((target - x_left) / (x_right - x_left).clamp_min(self.eps)).view(1, n_phase, 1)
-
-        vals_left = vals[:, left, :]
-        vals_right = vals[:, right, :]
-        interp = (1.0 - t) * vals_left + t * vals_right
-        return interp >= 0.5
 
     def build_forward_matrix_components(
         self,
@@ -380,82 +212,16 @@ class AsteroidForwardModel(torch.nn.Module):
         cos_alpha = torch.einsum("pd,pcd->pc", e_sun_rot, e_obs_rot)
         cos_alpha = torch.clamp(cos_alpha, min=-1.0, max=1.0)
         alpha = torch.acos(cos_alpha)
-        phase_factor = torch.exp(-alpha / self.alpha0) + self.k_phase * alpha
 
-        if self.visibility_mode == "convex":
-            visible = (mu0 > 0.0) & (mu > 0.0)
-            a_ls = torch.where(
-                visible,
-                phase_factor[:, :, None] * ls_term,
-                torch.zeros_like(ls_term),
-            )
-            a_prod = torch.where(
-                visible,
-                phase_factor[:, :, None] * prod,
-                torch.zeros_like(prod),
-            )
-            return (
-                a_ls.permute(1, 0, 2).contiguous(),
-                a_prod.permute(1, 0, 2).contiguous(),
-            )  # [C,P,F] each
-
-        n_phase = int(phases.numel())
-        n_cam = int(e_obs.shape[0])
-
-        visible_obs_convex = mu > 0.0  # [P,C,F]
-        visible_sun_convex = mu0 > 0.0  # [P,1,F]
-
-        sample_idx = torch.arange(
-            0,
-            n_phase,
-            self.occlusion_stride,
-            dtype=torch.long,
-            device=phases.device,
-        )
-        if int(sample_idx[-1].item()) != (n_phase - 1):
-            sample_idx = torch.cat(
-                [sample_idx, torch.tensor([n_phase - 1], device=phases.device, dtype=torch.long)]
-            )
-            sample_idx = torch.unique(sample_idx, sorted=True)
-
-        sampled_obs = torch.zeros(
-            (n_cam, int(sample_idx.numel()), self.n_facets),
-            dtype=torch.bool,
-            device=phases.device,
-        )
-        sampled_sun = torch.zeros(
-            (int(sample_idx.numel()), self.n_facets),
-            dtype=torch.bool,
-            device=phases.device,
-        )
-
-        for s_i, p_i in enumerate(sample_idx.tolist()):
-            sampled_sun[s_i] = self._visibility_mask(
-                direction=e_sun_rot[p_i],
-                candidate_mask=visible_sun_convex[p_i, 0],
-            )
-            for cam_i in range(n_cam):
-                sampled_obs[cam_i, s_i] = self._visibility_mask(
-                    direction=e_obs_rot[p_i, cam_i],
-                    candidate_mask=visible_obs_convex[p_i, cam_i],
-                )
-
-        sampled = sampled_obs & sampled_sun[None, :, :]
-        visibility_cam_phase = self._interpolate_visibility_periodic(
-            sample_idx=sample_idx,
-            sampled_mask=sampled,
-            n_phase=n_phase,
-        )
-
-        visible = visibility_cam_phase.permute(1, 0, 2)  # [P,C,F]
+        visible = (mu0 > 0.0) & (mu > 0.0)
         a_ls = torch.where(
             visible,
-            phase_factor[:, :, None] * ls_term,
+            ls_term,
             torch.zeros_like(ls_term),
         )
         a_prod = torch.where(
             visible,
-            phase_factor[:, :, None] * prod,
+            prod,
             torch.zeros_like(prod),
         )
         return (

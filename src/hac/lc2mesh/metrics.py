@@ -56,8 +56,8 @@ def estimate_best_circular_shifts(
     else:
         device = torch.device("cpu")
 
-    yt = torch.as_tensor(y_true, dtype=torch.float64, device=device)
-    yp = torch.as_tensor(y_pred, dtype=torch.float64, device=device)
+    yt = torch.as_tensor(y_true, dtype=torch.float32, device=device)
+    yp = torch.as_tensor(y_pred, dtype=torch.float32, device=device)
 
     if yt.ndim != 2:
         raise ValueError(f"y_true must have shape [n_cameras, n_phases], got {tuple(yt.shape)}")
@@ -160,27 +160,27 @@ def estimate_best_period_scales_and_shifts(
     else:
         device = torch.device("cpu")
 
-    yt = torch.as_tensor(y_true, dtype=torch.float64, device=device)
-    yp = torch.as_tensor(y_pred, dtype=torch.float64, device=device)
+    yt = torch.as_tensor(y_true, dtype=torch.float32, device=device)
+    yp = torch.as_tensor(y_pred, dtype=torch.float32, device=device)
     if yt.shape != yp.shape or yt.ndim != 2:
         raise ValueError(
             f"y_true/y_pred must share shape [n_cameras, n_phases], got {tuple(yt.shape)} vs {tuple(yp.shape)}"
         )
 
     n_cams, n_phases = int(yt.shape[0]), int(yt.shape[1])
-    scales = torch.as_tensor(period_scale_grid, dtype=torch.float64, device=device).reshape(-1)
+    scales = torch.as_tensor(period_scale_grid, dtype=torch.float32, device=device).reshape(-1)
 
     yt_center = yt - yt.mean(dim=1, keepdim=True)
     yt_std = torch.sqrt(torch.mean(yt_center**2, dim=1)).clamp_min(1e-12)
     yt_fft = torch.fft.fft(yt_center, dim=1)
 
-    best_corr = torch.full((n_cams,), -torch.inf, dtype=torch.float64, device=device)
-    best_scale = torch.ones(n_cams, dtype=torch.float64, device=device)
+    best_corr = torch.full((n_cams,), -torch.inf, dtype=torch.float32, device=device)
+    best_scale = torch.ones(n_cams, dtype=torch.float32, device=device)
     best_shift = torch.zeros(n_cams, dtype=torch.int64, device=device)
 
     with torch.no_grad():
         for scale in scales.tolist():
-            warped = apply_period_scales(yp, torch.full((n_cams,), scale, dtype=torch.float64, device=device))
+            warped = apply_period_scales(yp, torch.full((n_cams,), scale, dtype=torch.float32, device=device))
             wp_center = warped - warped.mean(dim=1, keepdim=True)
             wp_std = torch.sqrt(torch.mean(wp_center**2, dim=1)).clamp_min(1e-12)
 
@@ -243,7 +243,7 @@ def blend_to_target_corr(
 
 
 def _to_numpy_2d(x: np.ndarray | torch.Tensor, name: str) -> np.ndarray:
-    """Convert tensor/array input to float64 NumPy matrix [C, T]."""
+    """Convert tensor/array input to float32 NumPy matrix [C, T]."""
     if isinstance(x, torch.Tensor):
         arr = x.detach().cpu().numpy()
     else:
@@ -252,7 +252,7 @@ def _to_numpy_2d(x: np.ndarray | torch.Tensor, name: str) -> np.ndarray:
     if arr.ndim != 2:
         raise ValueError(f"{name} must have shape [n_cameras, n_phases], got {arr.shape}")
 
-    return arr.astype(np.float64, copy=False)
+    return arr.astype(np.float32, copy=False)
 
 
 def compute_per_camera_metrics(

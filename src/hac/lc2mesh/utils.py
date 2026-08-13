@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from scipy.spatial import ConvexHull, QhullError
 
 
 def set_seed(seed: int) -> None:
@@ -85,7 +86,7 @@ def edge_length_regularization(
         ref_vertices[:, edges[:, 0], :] - ref_vertices[:, edges[:, 1], :], dim=-1
     )
     rel_err = (curr - ref) / ref.clamp(min=1e-6)
-    return (rel_err ** 2).mean()
+    return (rel_err**2).mean()
 
 
 def make_mesh_tensors(
@@ -144,6 +145,50 @@ def chamfer_distance(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return pred_to_target.mean() + target_to_pred.mean()
 
 
+def sample_convex_hull_surface(
+    vertices: np.ndarray,
+    n_points: int = 4096,
+    seed: int | None = None,
+) -> np.ndarray:
+    """Area-uniform points on the convex-hull *surface* of a vertex set.
+
+    Builds ``scipy.spatial.ConvexHull`` of the input points and samples
+    uniformly on the hull triangles (area-weighted facet choice + uniform
+    barycentric sampling). Surface sampling is used instead of the hull
+    vertices because large hull facets would otherwise be represented by only
+    a few corner points, biasing a Chamfer loss.
+
+    Accepts ``[V, 3]`` or batched ``[B, V, 3]``; returns ``[n_points, 3]`` or
+    ``[B, n_points, 3]`` (float32 numpy).
+    """
+    verts = np.asarray(vertices, dtype=np.float32)
+    if verts.ndim == 3:
+        return np.stack(
+            [sample_convex_hull_surface(v, n_points=n_points, seed=seed) for v in verts]
+        )
+    if verts.ndim != 2 or verts.shape[1] != 3:
+        raise ValueError(f"Expected vertices [V, 3] or [B, V, 3], got {verts.shape}")
+
+    try:
+        hull = ConvexHull(verts)
+    except QhullError:
+        # Degenerate input (coplanar/duplicate points): joggle to recover.
+        hull = ConvexHull(verts, qhull_options="QJ")
+
+    tri = hull.points[hull.simplices]  # [F, 3, 3]
+    e1 = tri[:, 1] - tri[:, 0]
+    e2 = tri[:, 2] - tri[:, 0]
+    areas = 0.5 * np.linalg.norm(np.cross(e1, e2), axis=1)
+    rng = np.random.default_rng(seed)
+    face_idx = rng.choice(len(tri), size=int(n_points), p=areas / areas.sum())
+    u = rng.random((int(n_points), 1))
+    v = rng.random((int(n_points), 1))
+    flip = (u + v) > 1.0  # reflect into the triangle for uniform barycentrics
+    u = np.where(flip, 1.0 - u, u)
+    v = np.where(flip, 1.0 - v, v)
+    return tri[face_idx, 0] + u * e1[face_idx] + v * e2[face_idx]
+
+
 def vertex_normals_from_faces(
     vertices: torch.Tensor,
     faces: torch.Tensor,
@@ -151,7 +196,9 @@ def vertex_normals_from_faces(
 ) -> torch.Tensor:
     """Compute area-weighted differentiable vertex normals for batched triangle meshes."""
     if vertices.ndim != 3:
-        raise ValueError(f"Expected vertices shape [B, N, 3], got {tuple(vertices.shape)}")
+        raise ValueError(
+            f"Expected vertices shape [B, N, 3], got {tuple(vertices.shape)}"
+        )
     if faces.ndim != 2 or faces.shape[1] != 3:
         raise ValueError(f"Expected faces shape [F, 3], got {tuple(faces.shape)}")
 
@@ -246,4 +293,4 @@ def deformation_tv_regularization(
         dim=-1,
     ).clamp(min=1e-6)
     tv = torch.linalg.norm(di - dj, dim=-1) / edge_ref
-    return (tv ** 2).mean()
+    return (tv**2).mean()

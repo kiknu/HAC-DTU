@@ -18,15 +18,19 @@ from hac.lc2mesh.metrics import (
     apply_circular_shifts,
     apply_period_scales,
     blend_to_target_corr,
-    compute_per_camera_metrics,
     compute_mae,
     compute_mse,
     compute_pearson_r,
+    compute_per_camera_metrics,
     estimate_best_circular_shifts,
     estimate_best_period_scales_and_shifts,
 )
 from hac.lc2mesh.model import (
+    GraphConvolution,
+    MeshGCN,
     LightcurveToMesh,
+    INR,
+    build_normalized_adjacency,
 )
 from hac.lc2mesh.utils import (
     build_fixed_subset,
@@ -36,6 +40,7 @@ from hac.lc2mesh.utils import (
     edge_length_regularization,
     laplacian_regularization,
     resample_target_to_prior_directions,
+    sample_convex_hull_surface,
     set_seed,
     setup_device,
     soft_correspondence_normal_loss,
@@ -50,16 +55,19 @@ from hac.lc2mesh.visualization import (
     triangles_to_vertices_faces,
 )
 
-
 __all__ = [
     "AsteroidData",
     "AsteroidForwardModel",
+    "GraphConvolution",
     "LightcurveToMesh",
+    "MeshGCN",
     "SphericalMeshPrior",
+    "INR",
     "apply_circular_shifts",
     "apply_period_scales",
     "blend_to_target_corr",
     "build_fixed_subset",
+    "build_normalized_adjacency",
     "chamfer_distance",
     "compute_mae",
     "compute_mse",
@@ -84,10 +92,10 @@ __all__ = [
     "plot_interactive_triangular_mesh",
     "plot_lightcurve_comparison",
     "resample_target_to_prior_directions",
+    "sample_convex_hull_surface",
     "set_seed",
     "setup_device",
     "soft_correspondence_normal_loss",
     "triangles_to_vertices_faces",
     "vertex_normals_from_faces",
 ]
-
