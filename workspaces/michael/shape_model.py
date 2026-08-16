@@ -1,362 +1,516 @@
 #!/usr/bin/env python3
+"""Parameterized asteroid shapes with a common mesh-producing interface."""
 
 from __future__ import annotations
 
 import math
-from typing import Optional
+from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 import torch
 import torch.nn.functional as F
+
+
+@dataclass(frozen=True)
+class TriangleMesh:
+    """A differentiable vertex array with fixed triangular connectivity."""
+
+    vertices: torch.Tensor
+    faces: torch.Tensor
+
+
+@dataclass(frozen=True)
+class EllipsoidInitialization:
+    """Scale-free triaxial ellipsoid used to initialize a shape model."""
+
+    a: float = 1.0
+    b: float = 1.0
+    c: float = 1.0
+    theta: float = 0.0
+
+
+@dataclass(frozen=True)
+class MeshValidation:
+    valid: bool
+    reason: str = ""
+
+
+@runtime_checkable
+class ShapeModel(Protocol):
+    """Contract required by the photometric inverse problem."""
+
+    n_parameters: int
+    faces: torch.Tensor
+
+    def initial_parameters(
+        self, spec: EllipsoidInitialization | None = None
+    ) -> torch.Tensor: ...
+
+    def mesh(self, parameters: torch.Tensor) -> TriangleMesh: ...
+
+    def prior_residuals(self, parameters: torch.Tensor) -> torch.Tensor: ...
+
+    def project_parameters(self, parameters: torch.Tensor) -> torch.Tensor: ...
+
+    def validate_mesh(self, mesh: TriangleMesh) -> MeshValidation: ...
+
+
+def ellipsoid_log_radius(
+    directions: torch.Tensor, spec: EllipsoidInitialization
+) -> torch.Tensor:
+    """Zero-mean log radius of a z-aligned, in-plane-rotated ellipsoid."""
+
+    ct, st = math.cos(spec.theta), math.sin(spec.theta)
+    ux = ct * directions[:, 0] + st * directions[:, 1]
+    uy = -st * directions[:, 0] + ct * directions[:, 1]
+    uz = directions[:, 2]
+    radius = (
+        ux.square() / spec.a**2
+        + uy.square() / spec.b**2
+        + uz.square() / spec.c**2
+    ).rsqrt()
+    log_radius = torch.log(radius)
+    return log_radius - log_radius.mean()
+
+
+@torch.no_grad()
+def _has_transverse_self_intersections(
+    vertices: torch.Tensor,
+    faces: torch.Tensor,
+    *,
+    eps: float = 1e-7,
+) -> bool:
+    """Detect non-adjacent transverse triangle intersections.
+
+    Octantoid trial validation only needs a rejection test.  Candidate pairs
+    are first reduced with AABBs, then tested by intersecting the three edges
+    of each triangle with the other triangle.  Coplanar contacts are ignored;
+    they are caught in practice by the area/orientation checks or by a later
+    transverse crossing.
+    """
+
+    n_faces = faces.shape[0]
+    if n_faces < 2:
+        return False
+
+    tri = vertices[faces]
+    pairs = torch.triu_indices(
+        n_faces, n_faces, offset=1, device=vertices.device
+    )
+    fi, fj = pairs[0], pairs[1]
+
+    # Faces meeting at an edge or vertex are valid neighbours, not crossings.
+    left = faces[fi]
+    right = faces[fj]
+    adjacent = (left[:, :, None] == right[:, None, :]).any(dim=(1, 2))
+    fi, fj = fi[~adjacent], fj[~adjacent]
+    if fi.numel() == 0:
+        return False
+
+    ti, tj = tri[fi], tri[fj]
+    overlap = (
+        (ti.amax(dim=1) + eps >= tj.amin(dim=1))
+        & (tj.amax(dim=1) + eps >= ti.amin(dim=1))
+    ).all(dim=1)
+    ti, tj = ti[overlap], tj[overlap]
+    if ti.shape[0] == 0:
+        return False
+
+    def edges_hit_triangle(edges: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # edges: (P, 3, 2, 3), target: (P, 3, 3)
+        origin = edges[:, :, 0]
+        direction = edges[:, :, 1] - origin
+        v0 = target[:, None, 0]
+        e1 = (target[:, 1] - target[:, 0])[:, None]
+        e2 = (target[:, 2] - target[:, 0])[:, None]
+        pvec = torch.linalg.cross(direction, e2, dim=-1)
+        det = (e1 * pvec).sum(dim=-1)
+        nonparallel = det.abs() > eps
+        inv_det = torch.where(nonparallel, det.reciprocal(), torch.zeros_like(det))
+        tvec = origin - v0
+        u = (tvec * pvec).sum(dim=-1) * inv_det
+        qvec = torch.linalg.cross(tvec, e1, dim=-1)
+        v = (direction * qvec).sum(dim=-1) * inv_det
+        t = (e2 * qvec).sum(dim=-1) * inv_det
+        return (
+            nonparallel
+            & (u > eps)
+            & (v > eps)
+            & (u + v < 1.0 - eps)
+            & (t > eps)
+            & (t < 1.0 - eps)
+        ).any(dim=1)
+
+    edge_index = vertices.new_tensor(
+        [[0, 1], [1, 2], [2, 0]], dtype=torch.long
+    )
+    edges_i = ti[:, edge_index]
+    edges_j = tj[:, edge_index]
+    return bool(
+        (edges_hit_triangle(edges_i, tj) | edges_hit_triangle(edges_j, ti))
+        .any()
+        .item()
+    )
+
+
+def validate_triangle_mesh(
+    mesh: TriangleMesh,
+    *,
+    check_self_intersections: bool = False,
+    area_epsilon: float = 1e-10,
+) -> MeshValidation:
+    """Validate numerical and topological invariants of a trial mesh."""
+
+    vertices, faces = mesh.vertices, mesh.faces
+    if vertices.ndim != 2 or vertices.shape[1] != 3:
+        return MeshValidation(False, "vertices must have shape (V, 3)")
+    if faces.ndim != 2 or faces.shape[1] != 3:
+        return MeshValidation(False, "faces must have shape (F, 3)")
+    if not bool(torch.isfinite(vertices).all()):
+        return MeshValidation(False, "mesh contains non-finite vertices")
+
+    triangles = vertices[faces]
+    normal = torch.linalg.cross(
+        triangles[:, 1] - triangles[:, 0],
+        triangles[:, 2] - triangles[:, 0],
+        dim=-1,
+    )
+    if bool((normal.norm(dim=-1) <= area_epsilon).any()):
+        return MeshValidation(False, "mesh contains degenerate faces")
+
+    if check_self_intersections and _has_transverse_self_intersections(
+        vertices, faces
+    ):
+        return MeshValidation(False, "mesh contains self-intersections")
+
+    return MeshValidation(True)
 
 
 def real_spherical_harmonics(
     dirs: torch.Tensor,
     lmax: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Evaluate real orthonormal spherical harmonics on unit directions.
+
+    Columns are ordered by ``l = 0..lmax`` and ``m = -l..l``.  Negative
+    orders are sine modes and positive orders are cosine modes.
     """
-    Real orthonormal spherical harmonics evaluated on unit directions.
 
-    Column ordering:
-        l = 0, ..., lmax
-        m = -l, ..., +l
-
-    Convention:
-        m < 0: sine mode
-        m = 0: zonal mode
-        m > 0: cosine mode
-
-    Returns
-    -------
-    Y:
-        (V, (lmax + 1)^2) basis matrix.
-    degree:
-        (K,) spherical-harmonic degree l for each column.
-    order:
-        (K,) order m for each column.
-
-    The basis is fixed, so gradients are only needed with respect to
-    coefficients, not directions.
-    """
     if lmax < 0:
         raise ValueError("lmax must be non-negative")
 
     u = F.normalize(dirs, dim=-1)
     cos_theta = u[:, 2].clamp(-1.0, 1.0)
-    sin_theta = torch.sqrt(
-        (1.0 - cos_theta.square()).clamp_min(0.0)
-    )
+    sin_theta = torch.sqrt((1.0 - cos_theta.square()).clamp_min(0.0))
     phi = torch.atan2(u[:, 1], u[:, 0])
 
-    # Associated Legendre polynomials including the
-    # Condon-Shortley phase.
-    P = [
-        [None for _ in range(lmax + 1)]
-        for _ in range(lmax + 1)
+    legendre: list[list[torch.Tensor | None]] = [
+        [None for _ in range(lmax + 1)] for _ in range(lmax + 1)
     ]
-    P[0][0] = torch.ones_like(cos_theta)
-
-    # P_m^m
+    legendre[0][0] = torch.ones_like(cos_theta)
     for m in range(1, lmax + 1):
-        P[m][m] = (
-            -(2 * m - 1)
-            * sin_theta
-            * P[m - 1][m - 1]
+        legendre[m][m] = (
+            -(2 * m - 1) * sin_theta * legendre[m - 1][m - 1]
         )
-
-    # P_{m+1}^m
     for m in range(lmax):
-        P[m + 1][m] = (
-            (2 * m + 1)
-            * cos_theta
-            * P[m][m]
+        legendre[m + 1][m] = (
+            (2 * m + 1) * cos_theta * legendre[m][m]
         )
-
-    # Upward recurrence in l.
     for m in range(lmax + 1):
-        for l in range(m + 2, lmax + 1):
-            P[l][m] = (
-                (2 * l - 1) * cos_theta * P[l - 1][m]
-                - (l + m - 1) * P[l - 2][m]
-            ) / (l - m)
+        for degree in range(m + 2, lmax + 1):
+            legendre[degree][m] = (
+                (2 * degree - 1)
+                * cos_theta
+                * legendre[degree - 1][m]
+                - (degree + m - 1) * legendre[degree - 2][m]
+            ) / (degree - m)
 
-    columns = []
-    degrees = []
-    orders = []
-
-    sqrt2 = math.sqrt(2.0)
-
-    for l in range(lmax + 1):
-        for m in range(-l, l + 1):
-            mm = abs(m)
-
+    columns, degrees, orders = [], [], []
+    for degree in range(lmax + 1):
+        for order in range(-degree, degree + 1):
+            abs_order = abs(order)
             log_norm = 0.5 * (
-                math.log(2 * l + 1)
+                math.log(2 * degree + 1)
                 - math.log(4.0 * math.pi)
-                + math.lgamma(l - mm + 1)
-                - math.lgamma(l + mm + 1)
+                + math.lgamma(degree - abs_order + 1)
+                - math.lgamma(degree + abs_order + 1)
             )
             norm = math.exp(log_norm)
-
-            if m < 0:
-                ylm = (
-                    sqrt2
+            if order < 0:
+                value = (
+                    math.sqrt(2.0)
                     * norm
-                    * P[l][mm]
-                    * torch.sin(mm * phi)
+                    * legendre[degree][abs_order]
+                    * torch.sin(abs_order * phi)
                 )
-            elif m == 0:
-                ylm = norm * P[l][0]
+            elif order == 0:
+                value = norm * legendre[degree][0]
             else:
-                ylm = (
-                    sqrt2
+                value = (
+                    math.sqrt(2.0)
                     * norm
-                    * P[l][m]
-                    * torch.cos(m * phi)
+                    * legendre[degree][order]
+                    * torch.cos(order * phi)
                 )
+            columns.append(value)
+            degrees.append(degree)
+            orders.append(order)
 
-            columns.append(ylm)
-            degrees.append(l)
-            orders.append(m)
-
-    Y = torch.stack(columns, dim=1)
-
-    degree = torch.tensor(
-        degrees, dtype=torch.long, device=dirs.device
-    )
-    order = torch.tensor(
-        orders, dtype=torch.long, device=dirs.device
+    return (
+        torch.stack(columns, dim=1),
+        torch.tensor(degrees, dtype=torch.long, device=dirs.device),
+        torch.tensor(orders, dtype=torch.long, device=dirs.device),
     )
 
-    return Y, degree, order
+
+class StarShapeModel:
+    """Per-vertex log-radius model on a fixed spherical triangulation."""
+
+    def __init__(
+        self,
+        directions: torch.Tensor,
+        faces: torch.Tensor,
+        laplacian: torch.Tensor,
+        *,
+        r0: float = 0.5,
+        lam_lap: float = 30.0,
+        lam_scale: float = 10.0,
+        parameter_limit: float = 2.0,
+    ):
+        self.directions = F.normalize(directions, dim=-1)
+        self.dirs = self.directions  # compatibility with older diagnostics
+        self.faces = faces
+        self.laplacian = laplacian
+        self.r0 = float(r0)
+        self.lam_lap = float(lam_lap)
+        self.lam_scale = float(lam_scale)
+        self.parameter_limit = float(parameter_limit)
+        self.n_parameters = self.directions.shape[0]
+        self.n_params = self.n_parameters
+
+    def initial_parameters(
+        self, spec: EllipsoidInitialization | None = None
+    ) -> torch.Tensor:
+        if spec is None:
+            return self.directions.new_zeros(self.n_parameters)
+        return ellipsoid_log_radius(self.directions, spec)
+
+    def mesh(self, parameters: torch.Tensor) -> TriangleMesh:
+        if parameters.numel() != self.n_parameters:
+            raise ValueError(
+                f"Expected {self.n_parameters} parameters, "
+                f"received {parameters.numel()}."
+            )
+        vertices = (
+            self.r0 * torch.exp(parameters)[:, None] * self.directions
+        )
+        return TriangleMesh(vertices, self.faces)
+
+    def vertices(self, parameters: torch.Tensor) -> torch.Tensor:
+        return self.mesh(parameters).vertices
+
+    def prior_residuals(self, parameters: torch.Tensor) -> torch.Tensor:
+        return torch.cat(
+            [
+                self.lam_lap * (self.laplacian @ parameters),
+                self.lam_scale * parameters.mean().reshape(1),
+            ]
+        )
+
+    def project_parameters(self, parameters: torch.Tensor) -> torch.Tensor:
+        return parameters.clamp(-self.parameter_limit, self.parameter_limit)
+
+    def validate_mesh(self, mesh: TriangleMesh) -> MeshValidation:
+        # Radial positive scaling cannot change the topology of the template.
+        return validate_triangle_mesh(mesh)
 
 
-class OctantoidShape:
-    """
-    Differentiable octantoid on a fixed spherical triangulation.
+class OctantoidShapeModel:
+    """Pure Kaasalainen--Viikinkoski octantoid shape support.
 
-    The canonical representation is
+    ``a``, ``b`` and ``c`` are independent real spherical-harmonic fields:
 
-        x = r0 * ux * exp(a)
-        y = r0 * uy * exp(a + b)
-        z = r0 * uz * exp(a + c),
+        x = r0 ux exp(a), y = r0 uy exp(a+b), z = r0 uz exp(a+c).
 
-    with a, b and c represented using real spherical harmonics.
-
-    The constant coefficient of `a` is omitted because it is an
-    unobservable global-scale mode for mean-normalized lightcurves.
-
-    An optional Cartesian SH offset field can be enabled for strongly
-    irregular bodies. Its constant terms are omitted to avoid adding
-    an unobservable global translation.
+    The constant coefficient of ``a`` is omitted as a scale gauge.  Constant
+    ``b`` and ``c`` coefficients are retained and unregularized, so a triaxial
+    ellipsoid has zero spectral complexity.
     """
 
     def __init__(
         self,
-        dirs: torch.Tensor,
+        directions: torch.Tensor,
         faces: torch.Tensor,
         *,
-        lmax: int = 10,
+        lmax: int | None = 10,
+        lmax_a: int | None = None,
+        lmax_b: int | None = None,
+        lmax_c: int | None = None,
         r0: float = 0.5,
-        detail_lmax: Optional[int] = None,
-        detail_scale: float = 0.20,
-        max_log_scale: Optional[float] = 3.0,
+        lam_shape: float = 0.3,
+        degree_power: float = 2.0,
+        max_log_scale: float | None = 3.0,
+        check_self_intersections: bool = True,
     ):
-        self.dirs = F.normalize(dirs, dim=-1)
+        common = 10 if lmax is None else int(lmax)
+        self.lmax_a = common if lmax_a is None else int(lmax_a)
+        self.lmax_b = common if lmax_b is None else int(lmax_b)
+        self.lmax_c = common if lmax_c is None else int(lmax_c)
+        self.lmax = self.lmax_a  # compatibility name
+
+        self.directions = F.normalize(directions, dim=-1)
+        self.dirs = self.directions
         self.faces = faces
         self.r0 = float(r0)
-
-        self.lmax = int(lmax)
-        self.Y, self.degree, self.order = (
-            real_spherical_harmonics(self.dirs, self.lmax)
-        )
-        self.K = self.Y.shape[1]
-
-        # a has no l=0 coefficient; b and c have all coefficients.
-        self.n_base_params = (self.K - 1) + self.K + self.K
-
-        self.detail_lmax = detail_lmax
-        self.detail_scale = float(detail_scale)
+        self.lam_shape = float(lam_shape)
+        self.degree_power = float(degree_power)
         self.max_log_scale = max_log_scale
+        self.check_self_intersections = bool(check_self_intersections)
 
-        if detail_lmax is None:
-            self.Y_detail = None
-            self.degree_detail = None
-            self.K_detail = 0
-            self.n_detail_params = 0
-        else:
-            (
-                self.Y_detail,
-                self.degree_detail,
-                _,
-            ) = real_spherical_harmonics(
-                self.dirs, int(detail_lmax)
-            )
-            self.K_detail = self.Y_detail.shape[1]
-
-            # Three Cartesian fields, without constant translation.
-            self.n_detail_params = 3 * (self.K_detail - 1)
-
-        self.n_params = (
-            self.n_base_params + self.n_detail_params
+        self.Y_a, self.degree_a, self.order_a = real_spherical_harmonics(
+            self.directions, self.lmax_a
         )
+        self.Y_b, self.degree_b, self.order_b = real_spherical_harmonics(
+            self.directions, self.lmax_b
+        )
+        self.Y_c, self.degree_c, self.order_c = real_spherical_harmonics(
+            self.directions, self.lmax_c
+        )
+        self.K_a = self.Y_a.shape[1]
+        self.K_b = self.Y_b.shape[1]
+        self.K_c = self.Y_c.shape[1]
+        self.K = self.K_a
+        self.n_parameters = self.K_a - 1 + self.K_b + self.K_c
+        self.n_params = self.n_parameters
 
     def zero_parameters(self) -> torch.Tensor:
-        return self.dirs.new_zeros(self.n_params)
+        return self.directions.new_zeros(self.n_parameters)
 
     def unpack(
-        self,
-        p: torch.Tensor,
-    ) -> tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        Optional[torch.Tensor],
-    ]:
-        if p.numel() != self.n_params:
+        self, parameters: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if parameters.numel() != self.n_parameters:
             raise ValueError(
-                f"Expected {self.n_params} parameters, "
-                f"received {p.numel()}."
+                f"Expected {self.n_parameters} parameters, "
+                f"received {parameters.numel()}."
             )
-
         q = 0
-
-        a_free = p[q : q + self.K - 1]
-        q += self.K - 1
-
-        # Omit global scale a_00.
-        ca = torch.cat([p.new_zeros(1), a_free])
-
-        cb = p[q : q + self.K]
-        q += self.K
-
-        cc = p[q : q + self.K]
-        q += self.K
-
-        if self.n_detail_params:
-            # Shape: (xyz, nonconstant SH coefficients).
-            detail = p[q:].reshape(3, self.K_detail - 1)
-        else:
-            detail = None
-
-        return ca, cb, cc, detail
+        ca = torch.cat(
+            [
+                parameters.new_zeros(1),
+                parameters[q : q + self.K_a - 1],
+            ]
+        )
+        q += self.K_a - 1
+        cb = parameters[q : q + self.K_b]
+        q += self.K_b
+        cc = parameters[q : q + self.K_c]
+        return ca, cb, cc
 
     def fields(
-        self,
-        p: torch.Tensor,
+        self, parameters: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        ca, cb, cc, _ = self.unpack(p)
-        return self.Y @ ca, self.Y @ cb, self.Y @ cc
+        ca, cb, cc = self.unpack(parameters)
+        return self.Y_a @ ca, self.Y_b @ cb, self.Y_c @ cc
 
-    def vertices(self, p: torch.Tensor) -> torch.Tensor:
-        ca, cb, cc, detail = self.unpack(p)
-
-        a = self.Y @ ca
-        b = self.Y @ cb
-        c = self.Y @ cc
-
-        log_coordinate_scales = torch.stack(
-            [a, a + b, a + c], dim=-1
-        )
-
-        # Smoothly prevent exponent overflow during rejected LM steps.
+    def mesh(self, parameters: torch.Tensor) -> TriangleMesh:
+        a, b, c = self.fields(parameters)
+        log_scales = torch.stack([a, a + b, a + c], dim=-1)
+        # Smooth saturation protects rejected LM trials from exp overflow.
         if self.max_log_scale is not None:
             limit = float(self.max_log_scale)
-            log_coordinate_scales = (
-                limit
-                * torch.tanh(log_coordinate_scales / limit)
-            )
+            log_scales = limit * torch.tanh(log_scales / limit)
+        vertices = self.r0 * self.directions * torch.exp(log_scales)
+        return TriangleMesh(vertices, self.faces)
 
-        verts = (
-            self.r0
-            * self.dirs
-            * torch.exp(log_coordinate_scales)
+    def vertices(self, parameters: torch.Tensor) -> torch.Tensor:
+        return self.mesh(parameters).vertices
+
+    def _spectral_residuals(
+        self,
+        parameters: torch.Tensor,
+        *,
+        lam_shape: float,
+        degree_power: float,
+    ) -> torch.Tensor:
+        ca, cb, cc = self.unpack(parameters)
+
+        def weighted(coeff: torch.Tensor, degree: torch.Tensor) -> torch.Tensor:
+            # Squaring these residuals yields sum l^degree_power c_lm^2.
+            weight = degree.to(dtype=parameters.dtype).pow(
+                0.5 * degree_power
+            )
+            return lam_shape * weight * coeff
+
+        return torch.cat(
+            [
+                weighted(ca, self.degree_a)[1:],
+                weighted(cb, self.degree_b),
+                weighted(cc, self.degree_c),
+            ]
         )
 
-        if detail is not None:
-            # Constant Y00 has been removed, so there is no explicit
-            # translation parameter.
-            raw_offset = self.Y_detail[:, 1:] @ detail.T
-
-            # Bound the optional deformation. Subtracting the discrete
-            # mean eliminates any small residual translation.
-            offset = torch.tanh(raw_offset)
-            offset = offset - offset.mean(dim=0, keepdim=True)
-
-            verts = (
-                verts
-                + self.r0 * self.detail_scale * offset
-            )
-
-        return verts
+    def prior_residuals(self, parameters: torch.Tensor) -> torch.Tensor:
+        return self._spectral_residuals(
+            parameters,
+            lam_shape=self.lam_shape,
+            degree_power=self.degree_power,
+        )
 
     def regularization(
         self,
-        p: torch.Tensor,
+        parameters: torch.Tensor,
         *,
-        lam_shape: float,
-        lam_detail: float,
-        degree_power: float = 2.0,
+        lam_shape: float | None = None,
+        lam_detail: float | None = None,
+        degree_power: float | None = None,
     ) -> torch.Tensor:
-        """
-        Degree-weighted spectral regularization.
+        """Compatibility wrapper for the previous prototype API."""
 
-        For degree_power=2, residual weights are approximately
-        1 + l(l+1), strongly suppressing high-frequency oscillations.
-        """
-        ca, cb, cc, detail = self.unpack(p)
-
-        degree = self.degree.to(dtype=p.dtype)
-        weight = (
-            1.0 + degree * (degree + 1.0)
-        ).pow(0.5 * degree_power)
-
-        residuals = [
-            lam_shape * weight[1:] * ca[1:],
-            lam_shape * weight * cb,
-            lam_shape * weight * cc,
-        ]
-
-        if detail is not None:
-            degree_d = self.degree_detail.to(dtype=p.dtype)
-            weight_d = (
-                1.0 + degree_d * (degree_d + 1.0)
-            ).pow(0.5 * degree_power)
-
-            residuals.append(
-                (
-                    lam_detail
-                    * detail
-                    * weight_d[None, 1:]
-                ).reshape(-1)
-            )
-
-        return torch.cat(residuals)
-
-    @torch.no_grad()
-    def from_log_radius(
-        self,
-        log_radius: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Initialize the octantoid from a star-shaped log-radius field.
-
-        Only the `a` field is initialized; b, c and detail start at zero.
-        Global scale is removed.
-        """
-        if log_radius.shape != (self.dirs.shape[0],):
-            raise ValueError("log_radius must have shape (V,)")
-
-        target = log_radius - log_radius.mean()
-
-        A = self.Y[:, 1:].double()
-        rhs = target.double().unsqueeze(1)
-
-        coeff = torch.linalg.lstsq(A, rhs).solution[:, 0]
-        coeff = coeff.to(
-            dtype=self.dirs.dtype,
-            device=self.dirs.device,
+        del lam_detail
+        return self._spectral_residuals(
+            parameters,
+            lam_shape=(
+                self.lam_shape if lam_shape is None else float(lam_shape)
+            ),
+            degree_power=(
+                self.degree_power
+                if degree_power is None
+                else float(degree_power)
+            ),
         )
 
-        p = self.zero_parameters()
-        p[: self.K - 1] = coeff
-        return p
+    def project_parameters(self, parameters: torch.Tensor) -> torch.Tensor:
+        return parameters
+
+    def validate_mesh(self, mesh: TriangleMesh) -> MeshValidation:
+        return validate_triangle_mesh(
+            mesh,
+            check_self_intersections=self.check_self_intersections,
+        )
+
+    @torch.no_grad()
+    def from_log_radius(self, log_radius: torch.Tensor) -> torch.Tensor:
+        if log_radius.shape != (self.directions.shape[0],):
+            raise ValueError("log_radius must have shape (V,)")
+        target = log_radius - log_radius.mean()
+        coeff = torch.linalg.lstsq(
+            self.Y_a[:, 1:].double(), target.double().unsqueeze(1)
+        ).solution[:, 0]
+        parameters = self.zero_parameters()
+        parameters[: self.K_a - 1] = coeff.to(
+            dtype=self.directions.dtype, device=self.directions.device
+        )
+        return parameters
+
+    def initial_parameters(
+        self, spec: EllipsoidInitialization | None = None
+    ) -> torch.Tensor:
+        if spec is None:
+            return self.zero_parameters()
+        return self.from_log_radius(ellipsoid_log_radius(self.directions, spec))
+
+
+# The old public name remains importable while callers migrate to the explicit
+# ShapeModel suffix.
+OctantoidShape = OctantoidShapeModel

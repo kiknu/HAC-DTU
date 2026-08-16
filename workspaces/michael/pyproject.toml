@@ -3,12 +3,30 @@ name = "michael"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.10.*"
 dependencies = [
+    "embreex>=4.4.0",
+    "fast-simplification>=0.1.12",
     "matplotlib>=3.10.9",
     "numpy>=2.2.6",
     "pandas>=2.3.3",
     "pathlib>=1.0.1",
-    "torch>=2.13.0",
+    "pytorch3d",
+    "torch==2.6.0",
     "trimesh>=4.12.2",
 ]
+
+[tool.uv.extra-build-dependencies]
+pytorch3d = ["torch==2.6.0", "ninja", "numpy"]
+
+[tool.uv.extra-build-variables]
+pytorch3d = { MAX_JOBS = "4" }
+
+[tool.uv.sources]
+pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d.git", rev = "7f8a8a142fa1383a7895ed01dd7082105f9a81fb" }
+torch = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

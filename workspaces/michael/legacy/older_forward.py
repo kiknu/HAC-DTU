@@ -189,6 +189,11 @@ def get_model_stl_path(model_num: int) -> Path:
 
 
 def load_asteroid_mesh(model_num: int, device: torch.device) -> Meshes:
+    raise RuntimeError(
+        "raw public STL meshes must not enter the differentiable renderer; "
+        "use an 80-face smoke mesh or a 1,280-face optimizer proxy"
+    )
+    # Kept below as historical reference; this path is intentionally disabled.
     stl_path = get_model_stl_path(model_num)
     mesh_trimesh = trimesh.load(stl_path, force="mesh")
 

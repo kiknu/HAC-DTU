@@ -9,7 +9,7 @@ Outputs (all headless-safe):
   <prefix>_compare.glb      one scene (init | reference | fit) for any glTF viewer
   <prefix>_interactive.html optional plotly viewer (if plotly is installed)
 
-`fitter` only needs .dirs_t, .faces_t, .r0, .device  (duck-typed; ShapeFitter works).
+`fitter` supplies .shape_model and .device (ShapeFitProblem works).
 `reference` is (verts, faces) — pass the star-shaped proxy used to generate the
 data to isolate inversion error from the star-shape approximation error, or the
 raw GT mesh to see both combined. reference=None -> init/fit comparison only
@@ -20,7 +20,10 @@ import math
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import trimesh
+
+from shape_model import TriangleMesh
 
 import matplotlib
 matplotlib.use("Agg")
@@ -54,6 +57,11 @@ def _as_torch_mesh(mesh, device):
     v, f = mesh
     return (torch.as_tensor(v, dtype=torch.float32, device=device),
             torch.as_tensor(f, dtype=torch.long, device=device))
+
+
+def _fitted_mesh(fitter, parameters):
+    mesh = fitter.shape_model.mesh(parameters.detach())
+    return mesh.vertices, mesh.faces
 
 
 @torch.no_grad()
@@ -284,15 +292,16 @@ def evolution_gif(fitter, p_seq, reference, out_gif="fit_evolution.gif",
                   fps=5, elev=22, azim=135):
     """Animate the solver trajectory (record p per LM iteration in `solve`)."""
     ref_v, ref_f = _as_torch_mesh(reference, fitter.device)
-    r_ref = radial_support(ref_v, ref_f, fitter.dirs_t)
-    faces = _to_np(fitter.faces_t)
     frames = []
     for pp in p_seq:
-        r = fitter.r0 * torch.exp(pp.detach())
-        s = torch.exp(torch.mean(torch.log(r_ref) - torch.log(r)))
-        v = _to_np((s * r)[:, None] * fitter.dirs_t)
-        e = _to_np(torch.log(s * r) - torch.log(r_ref))
-        frames.append((v, e[faces].mean(1)))
+        vertices, faces_t = _fitted_mesh(fitter, pp)
+        directions = F.normalize(vertices, dim=-1)
+        radius = vertices.norm(dim=-1)
+        r_ref = radial_support(ref_v, ref_f, directions)
+        scale = torch.exp(torch.mean(torch.log(r_ref) - torch.log(radius)))
+        error = torch.log(scale * radius) - torch.log(r_ref)
+        faces = _to_np(faces_t)
+        frames.append((_to_np(scale * vertices), _to_np(error)[faces].mean(1)))
     vmax = max(1e-3, np.percentile(np.abs(np.stack([e for _, e in frames])), 99))
     lim = 1.08 * max(np.abs(v).max() for v, _ in frames)
     fig = plt.figure(figsize=(4.2, 4.2))
@@ -316,32 +325,34 @@ def visualize_fit(fitter, p0, p, reference=None, *, ref_label="reference",
                   out_prefix="fit_viz", align_scale=True, interactive=True,
                   turntable=False):
     """Full report. Returns metrics dict; writes PNG/GLB/HTML files."""
-    device, faces_np = fitter.device, _to_np(fitter.faces_t)
+    device = fitter.device
 
     # -- no reference (secret models): init/fit comparison only --------------
     if reference is None:
         ms, labs = [], ["initial", "fitted"]
         for pp in (p0, p):
-            r = fitter.r0 * torch.exp(pp.detach())
-            ms.append((_to_np(r[:, None] * fitter.dirs_t), faces_np))
+            vertices, faces = _fitted_mesh(fitter, pp)
+            ms.append((_to_np(vertices), _to_np(faces)))
         plot_shape_grid(ms, labs, [(0.55, 0.65, 0.85), (0.9, 0.55, 0.35)],
                         f"{out_prefix}_shapes.png")
         export_glb(ms, labs, f"{out_prefix}_compare.glb")
         return {}
 
     ref_v, ref_f = _as_torch_mesh(reference, device)
-    r_ref_t = radial_support(ref_v, ref_f, fitter.dirs_t)
 
     # -- gauge-aligned meshes + per-vertex errors ----------------------------
     meshes_np, meshes_t, errs, metrics = [], [], [], {}
     for tag, pp in (("initial", p0), ("fitted", p)):
-        r = fitter.r0 * torch.exp(pp.detach())
-        s = (torch.exp(torch.mean(torch.log(r_ref_t) - torch.log(r)))
+        vertices, faces = _fitted_mesh(fitter, pp)
+        directions = F.normalize(vertices, dim=-1)
+        radius = vertices.norm(dim=-1)
+        r_ref_t = radial_support(ref_v, ref_f, directions)
+        s = (torch.exp(torch.mean(torch.log(r_ref_t) - torch.log(radius)))
              if align_scale else torch.ones((), device=device))
-        v_t = (s * r)[:, None] * fitter.dirs_t
-        e = torch.log(s * r) - torch.log(r_ref_t)      # zero-mean if aligned
-        meshes_t.append((v_t, fitter.faces_t))
-        meshes_np.append((_to_np(v_t), faces_np))
+        v_t = s * vertices
+        e = torch.log(s * radius) - torch.log(r_ref_t)
+        meshes_t.append((v_t, faces))
+        meshes_np.append((_to_np(v_t), _to_np(faces)))
         errs.append(_to_np(e))
         metrics[tag] = dict(rms=float(e.pow(2).mean().sqrt()),
                             max=float(e.abs().max()), scale=float(s))
@@ -378,7 +389,10 @@ def visualize_fit(fitter, p0, p, reference=None, *, ref_label="reference",
                     f"{out_prefix}_shapes.png",
                     suptitle="shape recovery (gauge-aligned)")
     vmax = max(1e-3, float(np.percentile(np.abs(np.concatenate(errs)), 99)))
-    face_vals = [e[faces_np].mean(1) for e in errs]
+    face_vals = [
+        error[mesh[1]].mean(1)
+        for error, mesh in zip(errs, meshes_np[:2])
+    ]
     plot_error_maps(meshes_np[:2], face_vals, ["initial", "fitted"],
                     f"{out_prefix}_error.png", vmax)
     plot_sections(meshes_t, labels, [100 * e for e in errs],
@@ -410,6 +424,11 @@ if __name__ == "__main__":
         def __init__(self, dirs, faces, r0=0.5):
             self.dirs_t, self.faces_t, self.r0 = dirs, faces, r0
             self.device = dirs.device
+            self.shape_model = self
+
+        def mesh(self, parameters):
+            vertices = self.r0 * torch.exp(parameters)[:, None] * self.dirs_t
+            return TriangleMesh(vertices, self.faces_t)
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     sph = trimesh.creation.icosphere(3)
