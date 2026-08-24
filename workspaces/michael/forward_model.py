@@ -16,6 +16,7 @@ Key features:
 """
 
 import time
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
@@ -28,6 +29,7 @@ import torch.nn.functional as F
 import trimesh
 from torch.utils.checkpoint import checkpoint
 
+from challenge_geometry import CAMERA_ALPHA_DEG, CHALLENGE_COLUMNS
 from shape_model import TriangleMesh
 
 torch.set_default_dtype(torch.float32)
@@ -46,7 +48,19 @@ class Dataset:
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
-CHALLENGE_DATA_DIR = PROJECT_DIR / "challenge_data"
+
+
+def _challenge_data_dir() -> Path:
+    configured = os.environ.get("DSDIR")
+    if not configured:
+        return PROJECT_DIR / "challenge_data"
+    path = Path(configured).expanduser()
+    if path.name != "challenge_data":
+        path = path / "challenge_data"
+    return path.resolve()
+
+
+CHALLENGE_DATA_DIR = _challenge_data_dir()
 
 
 def get_model_folder(model_num: int) -> Path:
@@ -91,36 +105,7 @@ def load_data(
     data = pd.read_csv(lc_dir / fname, header=None, index_col=0)
     data.index.name = "frame"
     data = data.rename(
-        columns={
-            1: "0_hor1",
-            2: "0_hor2",
-            3: "0_top",
-            4: "0_bottom",
-            5: "45_hor1",
-            6: "45_hor2",
-            7: "45_top",
-            8: "45_bottom",
-            9: "90_hor1",
-            10: "90_hor2",
-            11: "90_top",
-            12: "90_bottom",
-            13: "135_hor1",
-            14: "135_hor2",
-            15: "135_top",
-            16: "135_bottom",
-            17: "225_hor1",
-            18: "225_hor2",
-            19: "225_top",
-            20: "225_bottom",
-            21: "270_hor1",
-            22: "270_hor2",
-            23: "270_top",
-            24: "270_bottom",
-            25: "315_hor1",
-            26: "315_hor2",
-            27: "315_top",
-            28: "315_bottom",
-        }
+        columns={index + 1: name for index, name in enumerate(CHALLENGE_COLUMNS)}
     )
     return Dataset(
         model_num=model_num,
@@ -1378,38 +1363,6 @@ def compute_lightcurves_multicam(
             else _integrate_chunk(*args)
         )
     return torch.cat(out, dim=0)  # (N, C)
-
-
-CAMERA_ALPHA_DEG = {
-    "0_hor1": 0.0,
-    "0_hor2": 0.0,
-    "0_top": 21.0,
-    "0_bottom": -21.0,
-    "45_hor1": 0.0,
-    "45_hor2": 0.0,
-    "45_top": 26.0,
-    "45_bottom": -24.0,
-    "90_hor1": 0.0,
-    "90_hor2": 0.0,
-    "90_top": 26.0,
-    "90_bottom": -24.0,
-    "135_hor1": 0.0,
-    "135_hor2": 0.0,
-    "135_top": 26.0,
-    "135_bottom": -24.0,
-    "225_hor1": 0.0,
-    "225_hor2": 0.0,
-    "225_top": 24.0,
-    "225_bottom": -26.0,
-    "270_hor1": 0.0,
-    "270_hor2": 0.0,
-    "270_top": 24.0,
-    "270_bottom": -26.0,
-    "315_hor1": 0.0,
-    "315_hor2": 0.0,
-    "315_top": 24.0,
-    "315_bottom": -26.0,
-}
 
 
 def build_view_dirs(columns, device):

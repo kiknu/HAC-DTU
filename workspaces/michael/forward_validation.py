@@ -20,7 +20,12 @@ import numpy as np
 import pandas as pd
 import torch
 import trimesh
-from trimesh.ray.ray_pyembree import RayMeshIntersector
+
+try:
+    from trimesh.ray.ray_pyembree import RayMeshIntersector as _EmbreeIntersector
+except (ImportError, ModuleNotFoundError):  # Optional on Apple Silicon.
+    _EmbreeIntersector = None
+from trimesh.ray.ray_triangle import RayMeshIntersector as _TriangleIntersector
 
 from forward_model import (
     ObservationGeometry,
@@ -30,15 +35,12 @@ from forward_model import (
     get_model_stl_path,
     load_data,
 )
+from challenge_geometry import UNIQUE_COLUMNS as CANONICAL_UNIQUE_COLUMNS
 from shape_model import TriangleMesh, validate_triangle_mesh
 from render_safety import DEFAULT_FACE_LIMIT, enforce_face_limit
 
 
-UNIQUE_COLUMNS = [
-    f"{az}_{kind}"
-    for az in (0, 45, 90, 135, 225, 270, 315)
-    for kind in ("hor1", "top", "bottom")
-]
+UNIQUE_COLUMNS = list(CANONICAL_UNIQUE_COLUMNS)
 CALIBRATION_COLUMNS = [
     f"{az}_{kind}"
     for az in (0, 90, 225, 315)
@@ -149,13 +151,55 @@ def star_proxy_mesh(
     sphere = trimesh.creation.icosphere(subdivisions=subdivisions)
     directions = np.asarray(sphere.vertices, dtype=np.float64)
     directions /= np.linalg.norm(directions, axis=1, keepdims=True)
-    intersector = RayMeshIntersector(source_mesh)
-    locations, ray_indices, _ = intersector.intersects_location(
-        np.zeros_like(directions), directions, multiple_hits=True
+    intersector = (
+        _EmbreeIntersector(source_mesh)
+        if _EmbreeIntersector is not None
+        else _TriangleIntersector(source_mesh)
     )
-    radii = np.zeros(len(directions), dtype=np.float64)
-    distances = np.linalg.norm(locations, axis=1)
-    np.maximum.at(radii, ray_indices, distances)
+    try:
+        locations, ray_indices, _ = intersector.intersects_location(
+            np.zeros_like(directions), directions, multiple_hits=True
+        )
+        radii = np.zeros(len(directions), dtype=np.float64)
+        distances = np.linalg.norm(locations, axis=1)
+        np.maximum.at(radii, ray_indices, distances)
+    except ModuleNotFoundError:
+        # A dependency-free fallback keeps tests and small user meshes usable
+        # on Apple Silicon.  Public challenge meshes have hundreds of
+        # thousands of faces and intentionally require Embree or Rtree from
+        # the reference extra instead of silently entering an hours-long loop.
+        if len(source_mesh.faces) > 50_000:
+            raise RuntimeError(
+                "building a proxy for a large reference mesh requires "
+                "Embree; install the reference dependencies or copy a "
+                "previously generated proxy cache"
+            )
+        triangles = np.asarray(source_mesh.triangles, dtype=np.float64)
+        v0 = triangles[:, 0]
+        edge1 = triangles[:, 1] - v0
+        edge2 = triangles[:, 2] - v0
+        radii = np.zeros(len(directions), dtype=np.float64)
+        eps = 1e-12
+        for ray_index, direction in enumerate(directions):
+            pvec = np.cross(np.broadcast_to(direction, edge2.shape), edge2)
+            determinant = np.einsum("ij,ij->i", edge1, pvec)
+            valid = np.abs(determinant) > eps
+            inverse = np.zeros_like(determinant)
+            inverse[valid] = 1.0 / determinant[valid]
+            tvec = -v0
+            u = np.einsum("ij,ij->i", tvec, pvec) * inverse
+            qvec = np.cross(tvec, edge1)
+            v = qvec @ direction * inverse
+            distance = np.einsum("ij,ij->i", edge2, qvec) * inverse
+            hit = (
+                valid
+                & (u >= -eps)
+                & (v >= -eps)
+                & (u + v <= 1.0 + eps)
+                & (distance > eps)
+            )
+            if np.any(hit):
+                radii[ray_index] = float(distance[hit].max())
     if np.any(radii <= 0.0):
         raise ValueError(
             f"star proxy has {int(np.count_nonzero(radii <= 0.0))} missed rays"

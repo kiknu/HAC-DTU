@@ -12,7 +12,7 @@ from forward_model import (
     PhotometricForwardModel,
     compute_lightcurves_multicam,
 )
-from main import ShapeFitProblem, compute_update, make_template
+from experiments.gauss_newton import ShapeFitProblem, compute_update, make_template
 from shape_model import (
     EllipsoidInitialization,
     OctantoidShapeModel,

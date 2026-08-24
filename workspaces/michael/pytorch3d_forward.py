@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from challenge_geometry import CAMERA_ALPHA_DEG, CHALLENGE_COLUMNS, UNIQUE_COLUMNS
 from shape_model import OctantoidShapeModel, TriangleMesh
 from render_safety import DEFAULT_FACE_LIMIT, enforce_face_limit, estimate_raster_memory
 
@@ -35,19 +36,6 @@ try:
     from pytorch3d.structures import Meshes
 except ImportError as exc:  # Keep CPU-only extraction helpers importable.
     _PYTORCH3D_IMPORT_ERROR = exc
-
-
-CAMERA_ALPHA_DEG = {
-    "0_hor1": 0.0, "0_hor2": 0.0, "0_top": 21.0, "0_bottom": -21.0,
-    "45_hor1": 0.0, "45_hor2": 0.0, "45_top": 26.0, "45_bottom": -24.0,
-    "90_hor1": 0.0, "90_hor2": 0.0, "90_top": 26.0, "90_bottom": -24.0,
-    "135_hor1": 0.0, "135_hor2": 0.0, "135_top": 26.0, "135_bottom": -24.0,
-    "225_hor1": 0.0, "225_hor2": 0.0, "225_top": 24.0, "225_bottom": -26.0,
-    "270_hor1": 0.0, "270_hor2": 0.0, "270_top": 24.0, "270_bottom": -26.0,
-    "315_hor1": 0.0, "315_hor2": 0.0, "315_top": 24.0, "315_bottom": -26.0,
-}
-CHALLENGE_COLUMNS = tuple(CAMERA_ALPHA_DEG)
-UNIQUE_COLUMNS = tuple(name for name in CHALLENGE_COLUMNS if not name.endswith("hor2"))
 
 
 def challenge_view_directions(
@@ -115,6 +103,7 @@ class RendererConfig:
     # softmax blend already smooths edges, so exact rasterization is used.
     blur_radius: float = 0.0
     framing_scale: float = 1.20
+    projection: Literal["orthographic", "perspective"] = "perspective"
     camera_distance_radii: float = 5.0
     light_distance_radii: float = 4.0
     lambertian_fraction: float = 0.5
@@ -141,6 +130,8 @@ class RendererConfig:
             raise ValueError("max_cameras must be positive when set")
         if self.camera_distance_radii <= 1.0:
             raise ValueError("camera_distance_radii must exceed one")
+        if self.projection not in ("orthographic", "perspective"):
+            raise ValueError("projection must be 'orthographic' or 'perspective'")
         if not 0.0 <= self.lambertian_fraction <= 1.0:
             raise ValueError("lambertian_fraction must lie in [0, 1]")
 
@@ -166,6 +157,23 @@ class RendererConfig:
         return cls(
             image_size=96, shadow_size=96, faces_per_pixel=4, batch_size=2,
             face_limit=1_280,
+        )
+
+    @classmethod
+    def cpu_optimization(cls) -> "RendererConfig":
+        """Conservative fitting profile for Apple Silicon and CPU hosts."""
+        return cls(
+            image_size=64, shadow_size=64, faces_per_pixel=4, batch_size=1,
+            face_limit=1_280, max_raster_memory_mib=256.0,
+            intensity_slope=8.0, binary_slope=8.0,
+        )
+
+    @classmethod
+    def cuda_optimization(cls) -> "RendererConfig":
+        """CUDA fitting profile with gentle differentiable extraction gates."""
+        return cls(
+            image_size=96, shadow_size=96, faces_per_pixel=4, batch_size=2,
+            face_limit=1_280, intensity_slope=8.0, binary_slope=8.0,
         )
 
     @classmethod
@@ -271,8 +279,8 @@ class PyTorch3DLightcurveModel(nn.Module):
         super().__init__()
         if _PYTORCH3D_IMPORT_ERROR is not None:
             raise ImportError(
-                "rendering requires PyTorch3D; install it against the pinned "
-                "Torch 2.6 cu124 runtime"
+                "rendering requires PyTorch3D; install the platform-specific "
+                "renderer extra against the locked Torch runtime"
             ) from _PYTORCH3D_IMPORT_ERROR
         self.config = config or RendererConfig()
 
@@ -293,11 +301,20 @@ class PyTorch3DLightcurveModel(nn.Module):
 
     def _observer_cameras(
         self, directions: torch.Tensor, radius: torch.Tensor, distance: torch.Tensor
-    ) -> FoVPerspectiveCameras:
+    ) -> FoVPerspectiveCameras | FoVOrthographicCameras:
         eye = directions * (radius * distance)
         at = torch.zeros_like(eye)
         up = eye.new_tensor([0.0, 0.0, 1.0]).expand_as(eye)
         R, T = look_at_view_transform(eye=eye, at=at, up=up)
+        if self.config.projection == "orthographic":
+            extent = float(radius.detach()) * self.config.framing_scale
+            return FoVOrthographicCameras(
+                device=eye.device, R=R, T=T,
+                min_x=-extent, max_x=extent,
+                min_y=-extent, max_y=extent,
+                znear=max(1e-4, float(radius.detach()) * 0.01),
+                zfar=float(radius.detach()) * (float(distance.detach()) + 2.0),
+            )
         fov = 2.0 * torch.atan(
             eye.new_tensor(self.config.framing_scale) / distance
         ) * (180.0 / math.pi)
@@ -366,7 +383,7 @@ class PyTorch3DLightcurveModel(nn.Module):
     def _render_chunk(
         self,
         meshes: Meshes,
-        cameras: FoVPerspectiveCameras,
+        cameras: FoVPerspectiveCameras | FoVOrthographicCameras,
         camera_eyes: torch.Tensor,
         sun: torch.Tensor,
         light_cameras: FoVOrthographicCameras,

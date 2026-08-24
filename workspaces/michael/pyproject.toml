@@ -1,32 +1,65 @@
 [project]
 name = "michael"
 version = "0.1.0"
-description = "Add your description here"
+description = "Differentiable octantoid asteroid inversion from lightcurves"
 readme = "README.md"
 requires-python = "==3.10.*"
 dependencies = [
-    "embreex>=4.4.0",
     "fast-simplification>=0.1.12",
     "matplotlib>=3.10.9",
     "numpy>=2.2.6",
     "pandas>=2.3.3",
-    "pathlib>=1.0.1",
-    "pytorch3d",
-    "torch==2.6.0",
+    "torch==2.5.1",
     "trimesh>=4.12.2",
 ]
 
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
+py-modules = [
+    "asteroid_cli",
+    "challenge_geometry",
+    "scalar_fit",
+    "pytorch3d_forward",
+    "shape_model",
+    "render_safety",
+    "forward_model",
+    "forward_validation",
+    "mitsuba_reference",
+    "visualize_fit",
+]
+
+[project.optional-dependencies]
+renderer = ["pytorch3d"]
+reference = [
+    "embreex>=4.4.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "mitsuba>=3.6.0",
+    "rtree>=1.4.0",
+    "scikit-image>=0.24.0",
+]
+
+[project.scripts]
+asteroid-invert = "asteroid_cli:main"
+
 [tool.uv.extra-build-dependencies]
-pytorch3d = ["torch==2.6.0", "ninja", "numpy"]
+pytorch3d = ["torch==2.5.1", "ninja", "numpy"]
 
 [tool.uv.extra-build-variables]
-pytorch3d = { MAX_JOBS = "4" }
+pytorch3d = { MAX_JOBS = "4", CFLAGS = "-Wno-invalid-specialization", CXXFLAGS = "-Wno-invalid-specialization" }
+
+[tool.uv]
+package = true
 
 [tool.uv.sources]
 pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d.git", rev = "7f8a8a142fa1383a7895ed01dd7082105f9a81fb" }
-torch = { index = "pytorch-cu124" }
+torch = [
+    { index = "pytorch-cu121", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+]
 
 [[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
 explicit = true

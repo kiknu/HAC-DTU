@@ -1,40 +1,113 @@
 # Differentiable asteroid lightcurve inversion
 
-The inversion is split into three independent layers:
+The recommended workflow fits octantoid shape coefficients and one rotational
+phase with Adam through the PyTorch3D renderer. Huber loss is the default;
+MSE is retained as a controlled comparison. Asteroids 1--3 are full public
+examples with reference meshes, while asteroids 4--9 are hidden-shape cases.
+The public meshes can contain millions of STL vertices and are reference data
+only: optimization uses a 642-vertex icosphere and can evaluate the same
+spherical-harmonic state on a 2,562-vertex icosphere.
 
-- `ShapeModel` maps a parameter vector to a fixed-connectivity
-  `TriangleMesh` and supplies representation-specific prior residuals.
-- `PhotometricForwardModel` consumes only a mesh and observation geometry. It
-  evaluates observer visibility and solar shadowing independently, retaining
-  every face as a possible occluder by default.
-- `ShapeFitProblem` combines data, a shape model, and the renderer behind the
-  representation-independent interface used by the LM/Gauss--Newton solver.
+Install the core environment and native renderer, then verify the actual
+forward and backward operations:
+
+```bash
+uv sync --extra renderer
+uv run --extra renderer asteroid-invert doctor --device auto
+```
+
+On Apple Silicon, `auto` deliberately selects CPU. PyTorch3D 0.7.9 is built
+locally with the modern-Clang compatibility flag recorded in `pyproject.toml`.
+MPS is not selected automatically because PyTorch3D's native rasterizer is not
+an MPS backend; `--device mps --experimental-mps` is accepted only for explicit
+capability testing. On Linux x86-64 the lock selects Torch's CUDA 12.1 build
+and `auto` selects CUDA when it is usable.
+
+The main commands are:
+
+```bash
+# Leave-one-body-out tuning on the known objects
+uv run --extra renderer --extra reference asteroid-invert calibrate --asteroids 1,2,3 --device auto
+
+# Public recovery and Huber-versus-MSE comparison
+uv run --extra renderer --extra reference asteroid-invert benchmark --asteroids 1,2,3 --compare-losses
+
+# Hidden shape: real intensity data and any compatible octantoid prior
+uv run --extra renderer asteroid-invert fit --asteroid 4 \
+  --initial-state prior.pt \
+  --calibration artifacts/calibration/calibration.json \
+  --evaluation-subdivisions 4
+
+# Recreate all figures from a completed run without refitting
+uv run asteroid-invert report --run-dir artifacts/fits/asteroid04
+```
+
+Each fit writes a versioned octantoid state, OBJ/GLB mesh, optimization
+history, per-camera metrics, residual heatmaps, and before/after plots for the
+21 unique camera curves. The duplicated `hor2` measurements are intentionally
+excluded. On CPU, complete sampled rotation curves are retained while camera
+groups are cycled through Adam updates, preserving per-curve normalization.
+Set `DSDIR` to either the challenge-data directory or its parent when the
+dataset is stored outside this workspace.
+If `artifacts/calibration/calibration.json` exists, fitting loads it
+automatically; `--calibration` overrides that location.
+
+## Architecture
+
+- `OctantoidShapeModel` maps spherical-harmonic coefficients to a
+  fixed-connectivity `TriangleMesh` and supplies the spectral prior.
+- `PyTorch3DLightcurveModel` is the production differentiable renderer and
+  implements direct illumination, cast shadows, perspective/orthographic
+  cameras, and challenge lightcurve extraction.
+- `scalar_fit.py` owns device selection, checkpoints, Adam fitting,
+  calibration, metrics, and artifacts.
+- `challenge_geometry.py` is the single source of camera names and asymmetric
+  elevation angles used by both renderers and data loading.
+- `asteroid-invert` exposes the workflow without duplicating fitting logic.
+
+The older `PhotometricForwardModel` remains an independent CPU parity
+reference. The Gauss--Newton driver in `experiments/gauss_newton.py` is
+retained as an experimental comparison, not the default optimizer.
+
+The optional `mitsuba_reference.py` module is a non-differentiable oracle. It
+uses Mitsuba's scalar CPU variant, direct illumination, smooth normals, the
+same outward view/sun convention as PyTorch3D, and a `-phase` body rotation.
+Raw HDR integration is the default; challenge-style thresholding requires an
+explicit HDR-to-display scale. Verify both optional reference dependencies and
+the production renderer with:
+
+```bash
+uv sync --extra renderer --extra reference
+uv run --extra renderer --extra reference asteroid-invert doctor --device cpu --reference
+```
+
+## Repository layout
+
+- Supported fitting and rendering modules remain at the repository root.
+- `tests/` contains the automated regression suite.
+- `scripts/diagnostics/` contains the older CUDA-specific checks, while
+  `scripts/validation/` contains standalone scientific inspection tools.
+- `experiments/` contains the retained Gauss--Newton/LM comparison.
+- `legacy/` contains unsupported raw-model experiments and archived outputs.
+- `docs/` contains validation notes, development handoffs, and research
+  references. Generated meshes and figures belong under ignored `artifacts/`.
+
+## Legacy and compatibility paths
+
+- `experiments/gauss_newton.py` is the retained Gauss--Newton/LM experiment.
+- `forward_model.py` is the custom CPU parity renderer; new fits use
+  `pytorch3d_forward.py`.
+- `scripts/validation/visualize_match.py` is a standalone forward-model
+  comparison; `visualize_fit.py` remains a supported report helper.
+- The programs under `scripts/diagnostics/` reproduce older CUDA checks.
+  Automated device-independent coverage lives in `tests/` and the doctor
+  command.
 
 Available shape models are `StarShapeModel` (per-vertex log radius) and
 `OctantoidShapeModel` (coupled real spherical-harmonic `a`, `b`, and `c`
 fields). The octantoid follows Kaasalainen & Viikinkoski (2012): its `a_00`
 global-scale mode is omitted, while constant `b_00` and `c_00` terms are kept
 and unregularized so triaxial ellipsoids have zero complexity cost.
-
-```python
-directions, faces, laplacian = make_template(subdivisions=3, device=device)
-shape = OctantoidShapeModel(
-    directions,
-    faces,
-    lmax_a=10,
-    lmax_b=6,
-    lmax_c=6,
-)
-problem = ShapeFitProblem(
-    normalized_lightcurves,
-    angles,
-    sun_direction,
-    camera_directions,
-    shape_model=shape,
-)
-p0 = generate_initial_guess(problem)
-p, history = solve(problem, p0)
-```
 
 `lmax=<n>` remains a shorthand for assigning the same maximum degree to all
 three octantoid fields. Cartesian offset/detail fields are intentionally not
@@ -51,32 +124,21 @@ self-intersections. Normal-ranked face culling is still
 available as an explicit approximation in the functional renderer but is off
 by default.
 
-Run the focused regression suite with:
+Run the complete regression suite with:
 
 ```bash
-uv run python -m unittest -v test_forward_architecture.py
+uv run --extra renderer python -m unittest discover -s tests -v
 ```
 
-## CUDA 12.4 safety profile
-
-The workspace environment is pinned to Python 3.10, Torch 2.6.0 from the Linux
-cu124 index, and a fixed PyTorch3D revision. The root and member project files
-carry the same build pin so uv's isolated PyTorch3D build cannot inherit a
-different Torch version. PyTorch3D builds with `MAX_JOBS=1`.
-After syncing, verify the driver/toolkit boundary before rendering:
-
-```bash
-uv run python -c "import torch; x=torch.zeros(1, device='cuda'); print(torch.__version__, torch.version.cuda, x)"
-```
+## Renderer safety profiles
 
 Differentiable rendering rejects meshes above 5,000 faces unless
 `allow_large_mesh=True` is set deliberately. `RendererConfig.smoke()`,
-`gradient_test()`, `optimization()`, and `evaluation()` encode the staged
-32/64/96/256-pixel profiles; smoke and evaluation must run under
-`torch.no_grad()`. Public STL files are reference inputs only. Convert them to
-an 80-face smoke mesh or a 1,280-face radial optimizer proxy before rendering.
-The public proxy benchmark now defaults to asteroid 1 and the eight-camera
-calibration subset; select each additional asteroid explicitly.
+`gradient_test()`, `cpu_optimization()`, `cuda_optimization()`, and
+`evaluation()` encode staged profiles. Public STL files are never passed to
+the differentiable renderer. Optional raw-mesh validation dependencies are
+installed with `uv sync --extra renderer --extra reference`; they are imported
+lazily so ordinary fitting and tests do not depend on Embree or Mitsuba.
 
 ## Optimization-resolution validation
 
@@ -225,23 +287,23 @@ path tracing.
 
 ## Forward-model vs data match visuals
 
-`visualize_match.py` shows how well a forward model reproduces the supplied
-challenge lightcurves. For each public asteroid it loads the observed data,
-renders the prediction on the 1,280-face star proxy, phase-aligns the
-prediction to the data, and writes per-camera curve panels, a residual
-heatmap, a per-camera metrics CSV, and a JSON summary (phase, mean RMSE,
-mean correlation). Both the CPU `PhotometricForwardModel` and the
+`scripts/validation/visualize_match.py` shows how well a forward model
+reproduces the supplied challenge lightcurves. For each public asteroid it
+loads the observed data, renders the prediction on the 1,280-face star proxy,
+phase-aligns the prediction to the data, and writes per-camera curve panels,
+a residual heatmap, a per-camera metrics CSV, and a JSON summary (phase, mean
+RMSE, mean correlation). Both the CPU `PhotometricForwardModel` and the
 differentiable PyTorch3D renderer are supported via `--backend`.
 
 ```bash
 # CPU forward model vs the simulated (Blender) intensity lightcurves
-uv run python visualize_match.py --asteroids 1,2,3 --backend cpu
+uv run python scripts/validation/visualize_match.py --asteroids 1,2,3 --backend cpu
 
 # GPU differentiable renderer vs asteroid 3's simulated intensity curves
-uv run python visualize_match.py --asteroids 3 --backend gpu
+uv run python scripts/validation/visualize_match.py --asteroids 3 --backend gpu
 
 # Real-video binary curves, coarser sampling
-uv run python visualize_match.py --asteroids 1 --origin real \
+uv run python scripts/validation/visualize_match.py --asteroids 1 --origin real \
   --curve-type binary --frame-stride 12
 ```
 

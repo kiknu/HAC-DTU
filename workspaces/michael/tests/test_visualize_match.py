@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from visualize_match import (
+from scripts.validation.visualize_match import (
     load_observed,
     metrics_table,
     plot_curve_match,

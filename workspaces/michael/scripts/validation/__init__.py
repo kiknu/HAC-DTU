@@ -1,0 +1,1 @@
+"""Standalone scientific validation utilities."""

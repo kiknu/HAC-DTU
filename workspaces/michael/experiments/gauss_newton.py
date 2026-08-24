@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-gn_shape_fit.py — Gauss-Newton / Levenberg-Marquardt shape inversion from
+Experimental legacy comparison; new fits use ``asteroid-invert fit``.
+
+gauss_newton.py — Gauss-Newton / Levenberg-Marquardt shape inversion from
 multi-camera lightcurves, on top of forward_model.py.
 
 Shape parameterizations implement one mesh-producing protocol.  The built-in
@@ -26,9 +28,15 @@ ShapeModel and exposes pure residual closures safe for
 torch.func.{jvp,vjp,vmap}.
 """
 
+import argparse
 import math
+import os
 import time
+from pathlib import Path
 from typing import Protocol
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-asteroid-invert")
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -752,8 +760,14 @@ def fd_check(fitter, p, gamma, h=1e-3):
     return float((fd - an).norm() / (an.norm() + 1e-30))
 
 
+DEFAULT_OUTPUT_DIR = Path("artifacts/experiments/gauss_newton")
+
+
 def test_fit(model_num=1, n_frames=840, fit_stride=3, noise=0.01,
-             subdiv=3, lam_lap=30.0, seed=0, device=None, make_plots=True):
+             subdiv=3, lam_lap=30.0, seed=0, device=None, make_plots=True,
+             output_dir=DEFAULT_OUTPUT_DIR):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
     if device.type == "cpu":
@@ -818,14 +832,15 @@ def test_fit(model_num=1, n_frames=840, fit_stride=3, noise=0.01,
     from visualize_fit import visualize_fit
     viz = visualize_fit(fitter, p0, p, reference=(v_dat_t, f_dat_t),
                         ref_label=f"star proxy (model {model_num})",
-                        out_prefix="gn_fit")
+                        out_prefix=str(output_dir / "gn_fit"))
     # optionally: reference=(verts_gt, faces_gt) to include star-approx error
     # return dict(p=p, p0=p0, history=hist, fitter=fitter, report=report,
     #             reference=(v_dat_t, f_dat_t), viz=viz)
 
     from visualize_fit import evolution_gif
     evolution_gif(fitter, [h["p"] for h in hist if "p" in h],
-                  reference=(v_dat_t, f_dat_t), out_gif="gn_fit_evolution.gif")
+                  reference=(v_dat_t, f_dat_t),
+                  out_gif=output_dir / "gn_fit_evolution.gif")
 
     # ---- metrics vs. the star-shaped target ---------------------------------
     dirs_np = fitter.dirs_t.cpu().numpy().astype(np.float64)
@@ -858,12 +873,13 @@ def test_fit(model_num=1, n_frames=840, fit_stride=3, noise=0.01,
             ax.plot(x, model[:, ci], "r-", lw=1.2, label="fit")
             ax.legend(); ax.grid(alpha=0.3)
         axes[-1].set_xlabel("rotation angle [deg]")
-        fig.tight_layout(); fig.savefig("gn_fit_curves.png", dpi=140)
+        fig.tight_layout(); fig.savefig(output_dir / "gn_fit_curves.png", dpi=140)
 
         plt.figure(figsize=(6, 4))
         plt.semilogy([h["cost_new"] for h in hist], ".-")
         plt.xlabel("LM iteration"); plt.ylabel("0.5 ||r||^2"); plt.grid(alpha=0.3)
-        plt.tight_layout(); plt.savefig("gn_fit_convergence.png", dpi=140)
+        plt.tight_layout()
+        plt.savefig(output_dir / "gn_fit_convergence.png", dpi=140)
 
         plt.figure(figsize=(5, 5))
         mesh_m = fitter.shape_model.mesh(p)
@@ -875,11 +891,30 @@ def test_fit(model_num=1, n_frames=840, fit_stride=3, noise=0.01,
         lim = [r_gt.min()*0.9, r_gt.max()*1.1]
         plt.plot(lim, lim, "k--", lw=1)
         plt.xlabel("ground-truth radius"); plt.ylabel("fitted radius (scale-aligned)")
-        plt.tight_layout(); plt.savefig("gn_fit_radii.png", dpi=140)
-        print("[test] wrote gn_fit_curves.png / gn_fit_convergence.png / gn_fit_radii.png")
+        plt.tight_layout(); plt.savefig(output_dir / "gn_fit_radii.png", dpi=140)
+        print(f"[test] wrote Gauss--Newton diagnostics under {output_dir}")
 
     return dict(p=p, p0=p0, history=hist, fitter=fitter, report=report)
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--asteroid", type=int, default=3)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default=None)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    device = torch.device(args.device) if args.device is not None else None
+    test_fit(
+        model_num=args.asteroid,
+        device=device,
+        output_dir=args.output_dir,
+    )
+    return 0
+
+
 if __name__ == "__main__":
-    test_fit(model_num=3)   # falls back to a synthetic potato if data missing
+    raise SystemExit(main())
