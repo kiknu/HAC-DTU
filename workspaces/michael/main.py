@@ -879,7 +879,3 @@ def test_fit(model_num=1, n_frames=840, fit_stride=3, noise=0.01,
         print("[test] wrote gn_fit_curves.png / gn_fit_convergence.png / gn_fit_radii.png")
 
     return dict(p=p, p0=p0, history=hist, fitter=fitter, report=report)
-
-
-if __name__ == "__main__":
-    test_fit(model_num=3)   # falls back to a synthetic potato if data missing

@@ -1,3 +1,5 @@
+"""Forward-match reporting regression tests."""
+
 import unittest
 from pathlib import Path
 

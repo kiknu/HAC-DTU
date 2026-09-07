@@ -1,3 +1,5 @@
+"""Regression tests for public forward-model validation."""
+
 import unittest
 
 import numpy as np

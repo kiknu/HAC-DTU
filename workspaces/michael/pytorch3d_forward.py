@@ -227,25 +227,30 @@ def extract_lightcurves(
     mode: Literal["soft", "exact"],
     intensity_slope: float = 96.0,
     binary_slope: float = 96.0,
+    compute_binary: bool = True,
 ) -> LightcurvePrediction:
     """Reduce grayscale images to both challenge observables."""
     if images.shape[0] != n_frames * n_cameras:
         raise ValueError("image batch does not match frame/camera dimensions")
     gray = images.reshape(n_frames * n_cameras, *images.shape[-2:]).clamp(0.0, 1.0)
-    otsu = otsu_threshold_uint8(gray).to(gray).view(-1, 1, 1)
     if mode == "exact":
         quantized = (gray * 255.0).round() / 255.0
         raw_intensity = torch.where(quantized > (25.5 / 255.0), quantized, 0.0).sum((1, 2))
-        raw_binary = (quantized > otsu).to(gray.dtype).sum((1, 2))
     elif mode == "soft":
         intensity_gate = _soft_gate(
             gray, gray.new_tensor(25.5 / 255.0), intensity_slope
         )
-        binary_gate = _soft_gate(gray, otsu, binary_slope)
         raw_intensity = (gray * intensity_gate).sum((1, 2))
-        raw_binary = binary_gate.sum((1, 2))
     else:
         raise ValueError("mode must be 'soft' or 'exact'")
+    if compute_binary:
+        otsu = otsu_threshold_uint8(gray).to(gray).view(-1, 1, 1)
+        if mode == "exact":
+            raw_binary = (quantized > otsu).to(gray.dtype).sum((1, 2))
+        else:
+            raw_binary = _soft_gate(gray, otsu, binary_slope).sum((1, 2))
+    else:
+        raw_binary = torch.zeros_like(raw_intensity)
     raw_intensity = raw_intensity.reshape(n_frames, n_cameras)
     raw_binary = raw_binary.reshape(n_frames, n_cameras)
     return LightcurvePrediction(
@@ -424,6 +429,7 @@ class PyTorch3DLightcurveModel(nn.Module):
         phase_offset: torch.Tensor | float = 0.0,
         lambertian_fraction: torch.Tensor | float | None = None,
         return_images: bool = False,
+        compute_binary: bool = True,
     ) -> LightcurvePrediction:
         vertices = mesh.vertices
         if self.config.require_no_grad and torch.is_grad_enabled():
@@ -498,6 +504,7 @@ class PyTorch3DLightcurveModel(nn.Module):
             images, n_frames, n_cameras, mode=extraction,
             intensity_slope=self.config.intensity_slope,
             binary_slope=self.config.binary_slope,
+            compute_binary=compute_binary,
         )
         return LightcurvePrediction(
             intensity=prediction.intensity,

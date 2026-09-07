@@ -1,3 +1,5 @@
+"""CPU-only tests for PyTorch3D support helpers."""
+
 import unittest
 
 import numpy as np

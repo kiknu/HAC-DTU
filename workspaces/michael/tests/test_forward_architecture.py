@@ -1,3 +1,5 @@
+"""Regression tests for the analytic forward and shape architecture."""
+
 import math
 import unittest
 

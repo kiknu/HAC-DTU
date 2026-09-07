@@ -1,3 +1,5 @@
+"""Renderer resource-limit regression tests."""
+
 import unittest
 
 from render_safety import (

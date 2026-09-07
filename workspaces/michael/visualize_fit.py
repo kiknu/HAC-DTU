@@ -412,35 +412,3 @@ def visualize_fit(fitter, p0, p, reference=None, *, ref_label="reference",
     print(f"[viz] wrote {out_prefix}_shapes/error/sections.png, "
           f"{out_prefix}_compare.glb")
     return metrics
-
-
-# ---------------------------------------------------------------------------
-# standalone smoke test (no challenge data needed)
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    import torch.nn.functional as F
-
-    class _FitterLike:
-        def __init__(self, dirs, faces, r0=0.5):
-            self.dirs_t, self.faces_t, self.r0 = dirs, faces, r0
-            self.device = dirs.device
-            self.shape_model = self
-
-        def mesh(self, parameters):
-            vertices = self.r0 * torch.exp(parameters)[:, None] * self.dirs_t
-            return TriangleMesh(vertices, self.faces_t)
-
-    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    sph = trimesh.creation.icosphere(3)
-    dirs = F.normalize(torch.tensor(sph.vertices, dtype=torch.float32,
-                                    device=dev), dim=-1)
-    faces = torch.tensor(sph.faces, dtype=torch.long, device=dev)
-    fl = _FitterLike(dirs, faces)
-    # reference = 1.4:1:0.8 ellipsoid, "fit" = noisy version, init = sphere
-    p_ref = -0.5 * torch.log(dirs[:, 0]**2 / 1.4**2 + dirs[:, 1]**2
-                             + dirs[:, 2]**2 / 0.8**2)
-    p_ref = p_ref - p_ref.mean()
-    ref = (fl.r0 * torch.exp(p_ref)[:, None] * dirs, faces)
-    visualize_fit(fl, torch.zeros_like(p_ref),
-                  p_ref + 0.05 * torch.randn_like(p_ref), reference=ref,
-                  out_prefix="viz_smoke")

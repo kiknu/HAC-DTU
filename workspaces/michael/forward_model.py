@@ -83,12 +83,14 @@ def load_data(
     lc_dir = model_dir / f"Asteroid{model_num:d}_lightcurve_data"
     assert lc_dir.is_dir()
 
-    fname = f"Asteroid{model_num:02d}_lightcurve_{curve_type}"
-    if origin == "simulated":
-        fname += "_blender"
-    fname += ".txt"
-
-    data = pd.read_csv(lc_dir / fname, header=None, index_col=0)
+    suffix = "_blender" if origin == "simulated" else ""
+    pattern = f"Asteroid*_lightcurve_{curve_type}{suffix}.txt"
+    matches = sorted(lc_dir.glob(pattern))
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"Expected one {pattern!r} in {lc_dir}, found {len(matches)}."
+        )
+    data = pd.read_csv(matches[0], header=None, index_col=0)
     data.index.name = "frame"
     data = data.rename(
         columns={
@@ -1588,7 +1590,3 @@ def main_multicam():
         f"peak mem: {torch.cuda.max_memory_allocated()/1e9:.2f} GB"
     )
     lcs = lcs / lcs.mean(dim=0, keepdim=True)
-
-
-if __name__ == "__main__":
-    main_multicam()

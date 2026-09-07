@@ -1,4 +1,4 @@
-# Forward-model mismatch investigation
+# Forward-model mismatch investigation (historical reference)
 
 Date: 2026-08-06
 
@@ -294,7 +294,13 @@ downsampled closed, consistently oriented mesh. For the current optimizer:
 - do not interpret the fitted distance or scattering mixture physically until
   the current Blender scene settings are available.
 
-## Reproduction
+## Historical reproduction notes
+
+The raw-ray scripts referenced by the original investigation were removed
+during the September 2026 cleanup after their conclusions and generated
+evidence were retained here. The commands below are archival provenance, not
+supported entry points. Current validation is performed with
+`hac-asteroids validate` and `forward_validation.py`.
 
 ```bash
 # Exact raw direct-light reference (legacy, moved to legacy/)
