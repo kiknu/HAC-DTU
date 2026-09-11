@@ -12,3 +12,8 @@ __marimo__/
 
 workspaces/ishak/recon*
 workspaces/ishak/ckpt*
+workspaces/ishak/videos*
+workspaces/ishak/experiments*
+workspaces/ishak/convex_inversions/
+workspaces/ishak/experiments/**/*.pth
+workspaces/ishak/experiments/**/*.stl

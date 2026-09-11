@@ -38,6 +38,28 @@ The script can be run from any directory and will download and extract data into
 - `just`: List available targets.
 - `just format`: Format Python files with Ruff (please run before commiting!).
 
+## Neural Reconstruction
+
+The [training notebook](workspaces/ishak/inr_forward_train.ipynb) fits an INR and
+graph refiner separately for each asteroid using the fixed convex forward model.
+It now uses camera-level validation and regularized two-stage training. See the
+[experiment report](workspaces/ishak/experiments/REPORT.md) for baseline comparisons,
+limitations, and reproduction commands.
+
+PyTorch and the notebook's Plotly visualization are declared in the optional
+`learning` extra (`uv sync --extra learning`). Match the PyTorch CUDA build to
+your GPU: the existing uv source selects CUDA 12.8, while the reported V100 runs
+used the already-installed CUDA 12.6 build. A fresh environment installation was
+not part of these experiments. The existing local Mitsuba build settings still
+apply. Download challenge data and provide the external convex-inversion priors
+listed in the report before running training.
+
+Run the focused tests with:
+
+```sh
+.venv/bin/python -m unittest discover -s tests -p 'test_lc2mesh_training.py' -v
+```
+
 ## Contributor Information
 
 - Add yourself as an author in `pyproject.toml`.

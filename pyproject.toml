@@ -27,6 +27,12 @@ dependencies = [
     "trimesh[recommend]>=4.12.2",
 ]
 
+[project.optional-dependencies]
+learning = [
+    "torch>=2.5",
+    "plotly>=6.0",
+]
+
 ### Custom Mitsuba Configuration
 # Comment out this if you want to use stock Mitsuba
 # Note that this takes a _really_ long time to compile

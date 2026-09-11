@@ -79,7 +79,8 @@ class RadialNetwork(nn.Module):
 class INR(nn.Module):
     """Stage 1: single coarse SIREN deformation field over a star-shaped prior mesh.
 
-    Produces the coarse INR mesh that Stage 2 (``MeshRefinementGCN``) refines.
+    Produces the coarse INR mesh that Stage 2 (``MeshGCN`` or
+    ``ResidualMeshGCN``) refines.
     Relies on explicit loss functions for regularization rather than internal
     forward-pass smoothing.
 
@@ -93,10 +94,9 @@ class INR(nn.Module):
       positive, mesh stays star-shaped (no fold-overs / tangential drift).
       'normal' (displace along supplied vertex normals) and 'vector'
       (free 3D displacement) reproduce the legacy behaviours.
-    - Learnable anisotropic global scale ``exp(log_global_scale)`` (3,): lets
-      the mesh stretch beyond the prior's cylinder bounds per axis without
-      saturating the INR. Axis *ratios* are observable from mean-normalized
-      lightcurves; a uniform scale is not (it cancels in the normalization).
+        - ``final_init_scale`` scales the last SIREN head at initialization. A
+            small value starts near the input mesh without changing the function
+            class or adding parameters. There is no separate global-scale parameter.
     """
 
     def __init__(
@@ -107,6 +107,7 @@ class INR(nn.Module):
         deformation_mode: str = "radial",
         output_activation: str = "identity",
         input_encoding: str = "direction",
+        final_init_scale: float = 1.0,
     ):
         super().__init__()
         if deformation_mode not in {"radial", "normal", "vector"}:
@@ -126,10 +127,14 @@ class INR(nn.Module):
             out_dim=field_dim,
             output_activation=output_activation,
         )
+        if final_init_scale != 1.0:
+            with torch.no_grad():
+                self.coarse_deformer.model[-1].linear.weight.mul_(final_init_scale)
+                self.coarse_deformer.model[-1].linear.bias.zero_()
 
     def _apply_input_encoding(self, base_vertices: torch.Tensor) -> torch.Tensor:
         if self.input_encoding == "direction":
-            return base_vertices / base_vertices.norm(dim=-1, keepdim=True)
+            return base_vertices / base_vertices.norm(dim=-1, keepdim=True).clamp_min(1e-12)
         else:  # raw
             return base_vertices
 
@@ -249,7 +254,7 @@ class MeshGCN(nn.Module):
             GraphConvolution(dims[i], dims[i + 1]) for i in range(num_layers)
         )
         self.activations = nn.ModuleList(
-            nn.PReLU() for _ in range(num_layers - 1)
+            nn.ReLU() for _ in range(num_layers - 1)
         )
         # Conservative output init: Stage 2 starts (almost) at the Stage-1 mesh.
         with torch.no_grad():
@@ -271,6 +276,69 @@ class MeshGCN(nn.Module):
         return self.layers[-1](h, self.adjacency)
 
 
+def aggregate_neighbors(features: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
+    """Apply one shared sparse graph to any batch dimensions in a single sparse mm."""
+    num_vertices, channels = features.shape[-2:]
+    flattened = features.reshape(-1, num_vertices, channels)
+    support = flattened.permute(1, 0, 2).reshape(num_vertices, -1)
+    result = torch.sparse.mm(adjacency, support)
+    return result.reshape(num_vertices, -1, channels).permute(1, 0, 2).reshape_as(features)
+
+
+class ResidualGraphBlock(nn.Module):
+    """Pre-normalized local/neighbor update with an unfiltered identity path."""
+
+    def __init__(self, hidden_dim: int, residual_scale: float):
+        super().__init__()
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.local = nn.Linear(hidden_dim, hidden_dim)
+        self.neighbor = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.activation = nn.SiLU()
+        self.residual_scale = residual_scale
+
+    def forward(self, features: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
+        normalized = self.norm(features)
+        update = self.local(normalized) + self.neighbor(aggregate_neighbors(normalized, adjacency))
+        return features + self.residual_scale * self.activation(update)
+
+
+class ResidualMeshGCN(nn.Module):
+    """Compact multiscale refiner retaining coordinate and one-ring detail paths.
+
+    LayerNorm acts on each vertex's channels, not on a batch of asteroids.
+    Unlike repeated low-pass graph convolutions, the skip paths retain local
+    detail. A near-zero linear head preserves the coarse mesh at initialization.
+    """
+
+    def __init__(
+        self,
+        faces: torch.Tensor,
+        num_vertices: int,
+        hidden_dim: int = 64,
+        num_layers: int = 4,
+        final_init_scale: float = 1e-3,
+    ):
+        super().__init__()
+        if hidden_dim < 1 or num_layers < 1:
+            raise ValueError("hidden_dim and num_layers must be positive")
+        self.register_buffer("adjacency", build_normalized_adjacency(faces, num_vertices), persistent=False)
+        self.input = nn.Linear(6, hidden_dim)
+        self.blocks = nn.ModuleList(
+            ResidualGraphBlock(hidden_dim, num_layers ** -0.5) for _ in range(num_layers)
+        )
+        self.output = nn.Linear(hidden_dim, 3)
+        with torch.no_grad():
+            self.output.weight.mul_(final_init_scale)
+            self.output.bias.zero_()
+
+    def forward(self, vertices: torch.Tensor) -> torch.Tensor:
+        detail = vertices - aggregate_neighbors(vertices, self.adjacency)
+        features = self.input(torch.cat([vertices, detail], dim=-1))
+        for block in self.blocks:
+            features = block(features, self.adjacency)
+        return self.output(features)
+
+
 class LightcurveToMesh(nn.Module):
     """Full two-stage reconstructor: coarse INR + graph-CNN refinement.
 
@@ -278,9 +346,9 @@ class LightcurveToMesh(nn.Module):
 
     - Phase 1 trains ``inr`` alone (lightcurve MSE + convex-hull Chamfer) to a
       coarse, globally accurate mesh; ``gcn`` parameters stay untouched.
-    - Phase 2 trains ``inr`` and ``gcn`` jointly on the lightcurve loss of the
-      REFINED mesh only, with the INR in a much slower parameter group
-      (``lr_inr_stage2 << lr_graph``).
+        - Phase 2 trains ``inr`` and ``gcn`` jointly using the refined mesh, with
+            the INR in a much slower parameter group (``lr_inr_stage2 << lr_graph``).
+            The external trainer controls hull and displacement regularization.
 
     The whole pipeline is differentiable: Stage-2 lightcurve gradients flow
     through the GCN and back into the INR.
@@ -299,9 +367,15 @@ class LightcurveToMesh(nn.Module):
         gcn_num_layers: int = 6,
         gcn_final_init_scale: float = 1e-3,
         R: float = 1.0,
+        gcn_architecture: str = "plain",
+        inr_final_init_scale: float = 1.0,
+        canonicalize_coarse: bool = False,
     ):
         super().__init__()
+        if gcn_architecture not in {"plain", "residual"}:
+            raise ValueError("gcn_architecture must be 'plain' or 'residual'")
         self.R = R
+        self.canonicalize_coarse = canonicalize_coarse
         num_vertices = int(faces.max().item()) + 1
         self.inr = INR(
             inr_hidden_dim=inr_hidden_dim,
@@ -310,18 +384,19 @@ class LightcurveToMesh(nn.Module):
             deformation_mode=deformation_mode,
             output_activation=output_activation,
             input_encoding=input_encoding,
+            final_init_scale=inr_final_init_scale,
         )
-        self.gcn = MeshGCN(
+        refiner = MeshGCN if gcn_architecture == "plain" else ResidualMeshGCN
+        self.gcn = refiner(
             faces=faces,
             num_vertices=num_vertices,
-            in_dim=3,
             hidden_dim=gcn_hidden_dim,
             num_layers=gcn_num_layers,
             final_init_scale=gcn_final_init_scale,
         )
 
     def canonicalize_to_cylinder(self, vertices: torch.Tensor) -> torch.Tensor:
-        """Differentiably gauge-fix vertices [V,3] to the challenge cylinder D(0,R) x [-1,1].
+        """Gauge-fix vertices [..., V, 3] to the challenge cylinder independently.
 
         Enforces the three exact facts from the challenge metadata:
         - containment: x^2 + y^2 <= R^2, |z| <= 1
@@ -332,14 +407,18 @@ class LightcurveToMesh(nn.Module):
         (center_xy="bounds"). Mean-normalized lightcurves cannot see uniform
         scale, so this also removes the scale gauge freedom during training.
         """
-        z = vertices[:, 2]
-        z_mid = 0.5 * (z.max() + z.min())
-        z_half = (0.5 * (z.max() - z.min())).clamp_min(1e-9)
-        xy = vertices[:, :2]
-        xy_mid = 0.5 * (xy.max(dim=0).values + xy.min(dim=0).values)
+        if vertices.ndim < 2 or vertices.shape[-1] != 3:
+            raise ValueError("vertices must have shape [..., V, 3]")
+        z = vertices[..., 2]
+        z_max = z.amax(dim=-1, keepdim=True)
+        z_min = z.amin(dim=-1, keepdim=True)
+        z_mid = 0.5 * (z_max + z_min)
+        z_half = (0.5 * (z_max - z_min)).clamp_min(1e-9)
+        xy = vertices[..., :2]
+        xy_mid = 0.5 * (xy.amax(dim=-2, keepdim=True) + xy.amin(dim=-2, keepdim=True))
         xy_c = xy - xy_mid
-        s_xy = self.R / xy_c.norm(dim=1).max().clamp_min(1e-9)
-        return torch.cat([xy_c * s_xy, ((z - z_mid) / z_half).unsqueeze(1)], dim=1)
+        s_xy = self.R / xy_c.norm(dim=-1, keepdim=True).amax(dim=-2, keepdim=True).clamp_min(1e-9)
+        return torch.cat([xy_c * s_xy, ((z - z_mid) / z_half).unsqueeze(-1)], dim=-1)
 
     def forward(
         self,
@@ -355,6 +434,8 @@ class LightcurveToMesh(nn.Module):
             vertices_refined: Stage-2 refined mesh ``vertices_inr + delta_V``.
         """
         vertices_inr, _ = self.inr(base_vertices, vertex_normals)
+        if self.canonicalize_coarse:
+            vertices_inr = self.canonicalize_to_cylinder(vertices_inr)
         vertices_refined = vertices_inr + self.gcn(vertices_inr)
-        vertices_refined = self.canonicalize_to_cylinder(vertices_refined.squeeze(0)).unsqueeze(0)  # [B, V, 3] -> [B, V, 3] in cylinder frame
+        vertices_refined = self.canonicalize_to_cylinder(vertices_refined)
         return vertices_inr, vertices_refined

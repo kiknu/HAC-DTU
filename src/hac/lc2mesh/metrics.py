@@ -7,6 +7,51 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 import torch
+import trimesh
+from scipy.spatial import cKDTree
+
+
+def mesh_reconstruction_metrics(
+    predicted: trimesh.Trimesh,
+    target: trimesh.Trimesh,
+    *,
+    n_surface_samples: int = 8192,
+    pitch: float = 0.04,
+    seed: int = 1729,
+) -> dict[str, float]:
+    """Evaluation-only surface distance and solid overlap in a shared world grid.
+
+    Chamfer is the sum of two mean Euclidean nearest-sample distances, not
+    squared distance or vertex-density-weighted distance. No rotation/scale
+    fitting is done here. Voxel indices are computed from world-space centers,
+    not each mesh's unrelated voxel-grid origin. Solid metrics require closed,
+    consistently wound meshes; self-intersections can still invalidate filling.
+    """
+    if n_surface_samples < 1 or pitch <= 0:
+        raise ValueError("sample count and voxel pitch must be positive")
+    pred_points, _ = trimesh.sample.sample_surface(predicted, n_surface_samples, seed=seed)
+    target_points, _ = trimesh.sample.sample_surface(target, n_surface_samples, seed=seed + 1)
+    pred_distances = cKDTree(target_points).query(pred_points)[0]
+    target_distances = cKDTree(pred_points).query(target_points)[0]
+    result = {
+        "surface_chamfer": float(pred_distances.mean() + target_distances.mean()),
+        "surface_p95": float(max(np.quantile(pred_distances, 0.95), np.quantile(target_distances, 0.95))),
+        "watertight": bool(predicted.is_watertight),
+        "winding_consistent": bool(predicted.is_winding_consistent),
+    }
+    valid = all(mesh.is_watertight and mesh.is_winding_consistent for mesh in (predicted, target))
+    if valid:
+        def world_voxels(mesh):
+            points = mesh.voxelized(pitch).fill().points
+            return set(map(tuple, np.rint(points / pitch).astype(np.int64)))
+
+        pred_voxels, target_voxels = world_voxels(predicted), world_voxels(target)
+        intersection = len(pred_voxels & target_voxels)
+        result["solid_dice"] = 2 * intersection / max(1, len(pred_voxels) + len(target_voxels))
+        result["solid_iou"] = intersection / max(1, len(pred_voxels | target_voxels))
+    else:
+        result.update(solid_dice=float("nan"), solid_iou=float("nan"))
+    return result
 
 
 def compute_mse(y_true: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
