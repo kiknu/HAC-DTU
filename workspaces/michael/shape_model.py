@@ -325,6 +325,85 @@ class StarShapeModel:
         return validate_triangle_mesh(mesh)
 
 
+def sphere_template(*, subdivisions: int = 3, faces: int | None = None):
+    """Build a deterministic closed sphere, optionally with an exact face count."""
+    import numpy as np
+    import trimesh
+
+    if faces is None:
+        return trimesh.creation.icosphere(subdivisions=subdivisions)
+    if isinstance(faces, bool) or not isinstance(faces, int) or faces < 8 or faces % 2:
+        raise ValueError("faces must be an even integer of at least 8")
+    level = 4
+    while 20 * 4**level < faces:
+        level += 1
+    mesh = trimesh.creation.icosphere(subdivisions=level)
+    if len(mesh.faces) > faces:
+        mesh = mesh.simplify_quadric_decimation(face_count=faces, aggression=4)
+    mesh.vertices = mesh.vertices / np.linalg.norm(mesh.vertices, axis=1, keepdims=True)
+    triangles = mesh.vertices[mesh.faces]
+    normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    outward = np.einsum("ij,ij->i", normals, triangles.mean(axis=1)) > 0
+    if (len(mesh.faces) != faces or not mesh.is_watertight
+            or not mesh.is_winding_consistent or mesh.euler_number != 2
+            or not outward.all()):
+        raise ValueError("could not construct the requested closed spherical template")
+    return mesh
+
+
+class RadialHarmonicShapeModel:
+    """One harmonic log-radius field; the radial subfamily of an octantoid."""
+
+    def __init__(self, directions, faces, *, lmax=6, r0=0.5,
+                 lam_shape=1.0, degree_power=2.0, max_log_scale=3.0,
+                 check_self_intersections=False):
+        self.directions = F.normalize(directions, dim=-1)
+        self.dirs = self.directions
+        self.faces = faces
+        self.lmax = lmax
+        self.r0 = float(r0)
+        self.lam_shape = float(lam_shape)
+        self.degree_power = float(degree_power)
+        self.max_log_scale = max_log_scale
+        self.Y, self.degrees, self.orders = real_spherical_harmonics(self.directions, lmax)
+        self.n_parameters = self.Y.shape[1] - 1
+        self.n_params = self.n_parameters
+
+    def zero_parameters(self):
+        return self.directions.new_zeros(self.n_parameters)
+
+    def initial_parameters(self, spec=None):
+        if spec is None:
+            return self.zero_parameters()
+        target = ellipsoid_log_radius(self.directions, spec)
+        return torch.linalg.lstsq(self.Y[:, 1:].double(), target.double()[:, None]).solution[:, 0].to(self.directions)
+
+    def mesh(self, parameters):
+        if parameters.shape != (self.n_parameters,):
+            raise ValueError(f"expected {self.n_parameters} radial harmonic coefficients")
+        field = self.Y[:, 1:] @ parameters
+        if self.max_log_scale is not None:
+            limit = float(self.max_log_scale)
+            field = limit * torch.tanh(field / limit)
+        return TriangleMesh(self.r0 * self.directions * torch.exp(field)[:, None], self.faces)
+
+    def vertices(self, parameters):
+        return self.mesh(parameters).vertices
+
+    def parameter_degrees(self):
+        return self.degrees[1:]
+
+    def prior_residuals(self, parameters):
+        weights = self.parameter_degrees().to(parameters).pow(0.5 * self.degree_power)
+        return self.lam_shape * weights * parameters
+
+    def project_parameters(self, parameters):
+        return parameters
+
+    def validate_mesh(self, mesh):
+        return validate_triangle_mesh(mesh)
+
+
 class OctantoidShapeModel:
     """Pure Kaasalainen--Viikinkoski octantoid shape support.
 
@@ -455,6 +534,13 @@ class OctantoidShapeModel:
             parameters,
             lam_shape=self.lam_shape,
             degree_power=self.degree_power,
+        )
+
+    def parameter_degrees(self) -> torch.Tensor:
+        """Spherical-harmonic degree associated with every free parameter."""
+
+        return torch.cat(
+            [self.degree_a[1:], self.degree_b, self.degree_c]
         )
 
     def regularization(

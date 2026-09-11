@@ -1,0 +1,579 @@
+{
+  "created_utc": "2026-09-10T21:25:13.940222+00:00",
+  "note": "Saved fit measurements only. Figure generation does not fit, resume, or modify experiments.",
+  "environment": {
+    "python": "3.10.20 (main, Mar  3 2026, 09:24:47) [GCC 13.3.0]",
+    "torch": "2.6.0+cu124",
+    "numpy": "2.2.6",
+    "matplotlib": "3.10.9",
+    "trimesh": "4.12.2"
+  },
+  "sha256": {
+    "reports/methods_overview/inputs.json": "942a5fe6b76932cbd1508facb9c512a38d8c01113555e5f91385253f6b7bd072",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/report_complete.json": "b16bf9c7df44db4a11386c2231ff0f3f3fbd04e78a753dabbf4293e0db15fb19",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/metrics.json": "71bac9078e21937b0c1bb907e40ac58a292b0a39cad80ca4ccf04ce84a531175",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4/run.json": "79b417ce385e2841e43c9bfc73250e969880cd9b6880bbfdacfe4415d3e33e8c",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4/trajectory.npz": "dd3e23505f0a4769c682af0fa620e82c6d65b7a816ab9b064695891b313cc466",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4/curves.npz": "6736192f7f0a625644ecfaf5b472747170ef1b3fa09e1fef2fac019fb18605d0",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4/comparison_metrics.json": "38c989b27a70f5214ab0690adc27d58075887f590fe3807cf06cbbc4d1e4aa70",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4/mesh_final.stl": "0aa5df7ce3659e4b6d8b61c3ac177838d65d5be925dd159edf423da906b8feec",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4/checkpoint.pt": "740ad51cecc712edf6a9f5dd7aeaedc68104b68f01b6628fec24e255bb26e814",
+    "challenge_data/AsteroidModel01_shape_public/Asteroid1_lightcurve_data/Asteroid01_lightcurve_intensity_blender.txt": "a31e205f8e14dc1c74532e7a4a1ef21a62e817fc694cf1e7a20fd2424a1859e5",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/report_complete.json": "251418003581b8f9d735132e57653d300c7e69e1ef15b848f947993c1a891aea",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/metrics.json": "ad0b1447f72619737085dcfcf02ee7ac1161c6550ad723eeecf4e6a96f6acb37",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4/run.json": "74136227ff22953516739c1d499a571b904904db4a92101a1d8904ad0176a103",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4/trajectory.npz": "6841d3d99276a2ad7d464bd14484653f70f7661473bd525a5dd7dec9f216a5f4",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4/curves.npz": "f876b4121069a3f758282f283e82cd07fa6cdb760bbb2d4917c31f9a8b5906a0",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4/comparison_metrics.json": "4fca14de9405aef5cb84fd418360f7e606a39a12d8df53b8760a10825e2fb22c",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4/mesh_final.stl": "b5de16c5064026d15a835ac74a03605505271ee4b634dd9b05d13c27fb2cb5c0",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4/checkpoint.pt": "15a4b1bf0dd5eb41fc57f77d378dad28f5a6d4f3f43ea6abc19310213e4f732f",
+    "challenge_data/AsteroidModel02_shape_public/Asteroid2_lightcurve_data/Asteroid02_lightcurve_intensity_blender.txt": "7599774eb0b4adf14ccb977962452d2fa674b455872ba34829de13df178cb041",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/report_complete.json": "565aff0bdcd9c22c0019ec88d552ee03928beaf34a6727c26a717a57ffbcd651",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/metrics.json": "43bb441261cefe3e61d6d09e85658240fdb3b2c1eeef7a5f9bc23ef214064eb8",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4/run.json": "105049d365f52774d98e457eafb717f9252ff22ecb1785bb82a3bf68bc964412",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4/trajectory.npz": "73c5d22e5287f7a937ba374c4f16d5bda6adf1b759d7e842195d8ad7aec034be",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4/curves.npz": "2bf51c1fc7fce3cbef13af59ea8237ef33595749af9c51027c6645dc19e07fc2",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4/comparison_metrics.json": "f4e6f897809a2efa69466f44561fd1ef9e1bf3d557c43fc41dbc96913d71095e",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4/mesh_final.stl": "5ab9aaef4049415224afa5b0faa055238887f6992d93719f1bb824b37d2fc2cf",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4/checkpoint.pt": "dd38acd4c1f803d91ca2626e2785a264d3c9afefc9ee25d306958186c0008f21",
+    "challenge_data/AsteroidModel03_shape_public/Asteroid3_lightcurve_data/Asteroid03_lightcurve_intensity_blender.txt": "3d69c46fcfde2f17c04f10a136821a3ea2bad7c7e0dc1af8ee3ed6c96a7ab856",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/report_complete.json": "c97049bdb24d0645700d032508479173bd54adc6e465c4eb6909c399a1abf1c2",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/metrics.json": "d81755983328546a76d430fecae7aa1e149720c547740d59db376e5bd0368f0b",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4/run.json": "8dc0b07a3da367cbafad71febe0b6d5064f4d7e8d0946cd73cfd39f6807e2dec",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4/trajectory.npz": "b7de89dc951a19aebaad5126c8c7f75b3d581929c658f4f5ec1335c209a33c90",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4/curves.npz": "1e929e3f2c13829b7ea899b596582bb840807cfd472e19317f97b617c31b5587",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4/comparison_metrics.json": "e2fb3db907cb55fc00e3ead0ea6e670ce93237406d45080e869138a0720e47f1",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4/mesh_final.stl": "5875377e2f8c2f23f187cf4a9e5cc4f83fffacff7ed15b7796bf6536e01331bf",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4/checkpoint.pt": "8ddbfff7bedcb366c40bc51625a6db19eeeea08920f8dcfd46a4787027923fd9",
+    "challenge_data/AsteroidModel04_shape_secret/Asteroid4_lightcurve_data/Asteroid04_lightcurve_intensity_blender.txt": "78b9660edcad266166a6dc78f56d6b8c1090f3d55eff46529065a8841b5a7e99",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/report_complete.json": "3ea4c0d5b384f8db8de32862704440ab08dd24194cc87ec4bebc005070fa1da7",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/metrics.json": "3c3a8a71ac345af9fc19b5c91ff82284c4f21052612d365351287e90c59b375c",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4/run.json": "b889cd97fe5407454eca4e3dcc7d1f2ec4a11ffa9694908ef5f890a4f6c28cca",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4/trajectory.npz": "608eb772b0236b73412c539f044f59873b8f717048c71a01e5aa852d0a0bac2f",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4/curves.npz": "0f372a2b7f9fca25713416917e6224f0a43bb6936e6f8aef1c2b89424bb6dc8c",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4/comparison_metrics.json": "cfd8f6a61327494473b9e7568338877a7b22621216b24ccd3fee5da7ddfea8ca",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4/mesh_final.stl": "304fdf7831fe958d61a47121d1f5518f54f8327bf595dea39dfb6da529b8c5c7",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4/checkpoint.pt": "8080e625c6621093d6afdff7c6e13973b25d1abb4fee54cd5ec96f87655f7c4d",
+    "challenge_data/AsteroidModel05_shape_secret/Asteroid5_lightcurve_data/Asteroid05_lightcurve_intensity_blender.txt": "4a0af3d8b41f5330cd32232303f6562a30f583ae2ce930f1c9f5d34d30605474",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/report_complete.json": "ed445bb95dbe96beced904444d3b93e53a3b49e5d30614f1145e269be66afd1f",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/metrics.json": "c705f45d738205c1ee7e9ad1f66aee88ea18847a3e3b03fcd9ba67988f9e5178",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4/run.json": "668eeb2a85947247f21f982e4f423fc3fb3f2911c6e136f8459947c83609705b",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4/trajectory.npz": "5d43a6830138f9aba74b3f6c4b74fbbe206151849ce140101009b8f81eac2ecc",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4/curves.npz": "03ea1ed09c040a6ea096d9ec8025c658d085d2d32f39407d41263e88eaa7664e",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4/comparison_metrics.json": "a5c08e84c1ef6d2f3fc238c09c0610249e7b56eb383258c4dd51b3eda5416735",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4/mesh_final.stl": "8ef35b0f6f662d4a08878fb33d9358121ff66723c37a921b01b133b44159e2ab",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4/checkpoint.pt": "fe7554e2ed4951ccee0c20f6b3dfaddff9b73cda1214828ecb0b2f32cf8feaeb",
+    "challenge_data/AsteroidModel06_shape_secret/Asteroid6_lightcurve_data/Asteroid06_lightcurve_intensity_blender.txt": "981ee742521601a6edcb0aac90b8bfcbf3607a049bbc01a8384a116ae9a994f9",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/report_complete.json": "a2a673eacf9b845457010275d89e7a9911f37492e5b7affdee652a5775c8fff9",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/metrics.json": "f276425ccf261dda405c131ddaac2b53d5526383bf3ee7af3bf216c7a3a43e2c",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4/run.json": "1a827203856c2eef7f2f472695870acd224edf487e69e78e61c6841dc434a208",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4/trajectory.npz": "b161cc45f14a3da624144e728e8f14f015485aace1e43c73a73f11bfe42525aa",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4/curves.npz": "4fe8b2979adfba08c6ef0a9b50dda8652af36a0655f44e5583aa69bbfbf404b3",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4/comparison_metrics.json": "a3db1270dffa671e74ee0c1fb2e1f36f98f437e4aca1db846ad2af70b774fb94",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4/mesh_final.stl": "b334e302039e8a70d8b288d66822bdc632a493563a5ef76c3b975638b01a9998",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4/checkpoint.pt": "d5fd554c1e89508dc1ef0c6d7f47a4d50408ace0d1193aa1cec1188f6376545d",
+    "challenge_data/AsteroidModel07_shape_secret/Asteroid7_lightcurve_data/Asteroid07_lightcurve_intensity_blender.txt": "4c76998a7c256f7f9d0d1242cdeec2bdd37222c54e14070ebccc9ba3af425a54",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l2/run.json": "86aeb0578a0758379e205ca290a545c7cb2575813cebca30e1f2f8efe1fb6564",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l2/comparison_metrics.json": "a8d78e1366aa3088d8d88d62c8e75027853f694a982fbf92b88ee91bb5864ef2",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l2/trajectory.npz": "1d3e0a95c457bd8bcf91e110c719676459fc3d8d7800488df1c733a76813ce8f",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l2/checkpoint.pt": "0f778acd9b4337cd40c3c3543d6d7a2c3014e14c470d36ad2a71fd160c1e8954",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l2/curves.npz": "b5812f5e8b28b2d9b61cac20b5303052d5751abc3c18df2fb5ec0b0d0c39f8f7",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l2/mesh_final.stl": "43b838dc5a7dba90664ba96bc361fedcf0567319523ca11dbfa087ac0e5417e2",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l4/run.json": "fab5269fc170b5e177dd06a36403a4917b430d997fcbf2befbcd9f5a4071e4ca",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l4/comparison_metrics.json": "81c04e25c11d8e01e02a567e18a4033565dd08fc78c10efe6a0f6140e190dc85",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l4/trajectory.npz": "023fa2a5f3ac4ceab60cb60782c631449980d86ff78c574a68b704c26a0edeca",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l4/checkpoint.pt": "7069b1af84fdbaa4b0d430ddf9e3fc8544d54c5a398959fa0d3d169043fc30ac",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l4/curves.npz": "11c374b1c6335776a9f54182f93870bab6a60d067bd92d179b12d24f1c7449c7",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l4/mesh_final.stl": "2caff74b2aef62f347ca8e1f7166e271599a02e639e6e11fdc04a05562c6870f",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l6/run.json": "1c9f4d8161fa5082b3ec39eb8f040050615157fee088fe2e99d6a5b1f2dcad2c",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l6/comparison_metrics.json": "06c4c481a971c4c66e0356778d803a5251a6642d3fafe075c9c4beeee26071bb",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l6/trajectory.npz": "363bd5055d6ff19f44e07d79659e805774982c7636b84dd11e82ca201d2b6852",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l6/checkpoint.pt": "d0b8647f793809b8d75ae184b790463067b2733218f08daef7362be507d9e502",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l6/curves.npz": "585f5ec23eab0b1448091fc6cec6203124e805982422592cfaadd178e15b72ff",
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l6/mesh_final.stl": "e9c977c69d99d2b9a6f49b5fcd41bc22eb5ee1121e792fbf5614f5f32c734693",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l6/run.json": "cb24b779eb0d98d4396a26aa97a0dd0ad3ccf0ca4a614b04c582db2052c78d14",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l6/comparison_metrics.json": "74d5794d2f9e34d1f8a1bb98b6431cbca9ca61fdd79f8a86cf023c7dcf2363cb",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l6/trajectory.npz": "77bd57ca092dab42c9ba3d14aa1ef3400037a5bed8991c391f69507736389809",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l6/checkpoint.pt": "bd7d8dad372deb96cc1b473c3f266dc2c058310cadfa3b0549e96f19d3c53b61",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l6/curves.npz": "857b82576c2731bd8eb0995a2af7b3299b5988ca79f2352246ef097e5d9836ed",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l6/mesh_final.stl": "a8d454884fe83046062f32cc0337155a1f36ea3b0aa0dca055999b5dd2e32edb",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l11/run.json": "4da318734f5813d2ba3e4204cd9cc9c8be6c9cca0f4c2aef56be02425364a80e",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l11/comparison_metrics.json": "ef2550d7e8d091e38909c9e1f5537fa3e327780126a1c9076bbcac8866980d68",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l11/trajectory.npz": "ceb702f78eb3a90f4207117b06f8d049a6fe90882c3e665581dd93aa1288a11f",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l11/checkpoint.pt": "9bbe9a2ae4423c9b3d4eff811bf7f806084ba842d19e3a2d7b961e3a28798e85",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l11/curves.npz": "f0212b931a819588b6b4152ae606977431ded9726be61fd37688bbdf22bf836f",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l11/mesh_final.stl": "a37d148ea8ecc4183f1f15a77796b40ebc5d11b7d66fbaf1e7e380bc7cf6b09d",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/octantoid_l6/run.json": "f8b08e2441fe57dbfd8d15998ac8f5bbfbef4662608a9af931ec5f0315b911f0",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/octantoid_l6/comparison_metrics.json": "c42222d46f9b43ff0a240615d6219877a922a37dea2870ac5b446cb7ea19b8cf",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/octantoid_l6/trajectory.npz": "7799c14a6af3f7a9662a8b8378fb3cc3fb2e49b10d1afea6ef08d14428884b7d",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/octantoid_l6/checkpoint.pt": "4f9009d6789150fa478e0b2feed70108ff4958e2a6e013eac7e5ee650adc7955",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/octantoid_l6/curves.npz": "a6f50c67e8410d2a873c296a04d9a6766c3e6401b411ce9e0f0c5a1792feb7f8",
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/octantoid_l6/mesh_final.stl": "617f7231e34bdc682b85c79418d61e631ab9f2269d07a5cd16c168ad96dad889",
+    "challenge_data/AsteroidModel02_shape_public/asteroid2.stl": "4344f185254fa9c5e4f406b40896b1fcae5c80895c7894cd12d5a9ebd53df614",
+    "challenge_data/AsteroidModel03_shape_public/asteroid3.stl": "5a2a47190a36f4eb1d9ac7b28c355c7702afff5566df1a1fa2817a3c104343be",
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/mesh_cache/asteroid03_star_proxy_1280_faces.npz": "7ee4fcb44bc16f55182e30f6eee8ca73d07aae0b73a018e7f425cd9d26627f97",
+    "shape_model.py": "e7c19f789ef477bf01a72cfde5fa0eacc79adf65374270ee77f46510dc3ccc08",
+    "pytorch3d_forward.py": "d6f4228bc4ab94931d045b6007c164d4c20b2e862d4976c8e1e105d4764cb659",
+    "forward_validation.py": "a63aeb0e6f8b10c53faab6eb5c0a62d0dd731ff46782255d96a7a3cf0dbd80d3",
+    "hac_asteroids/calibration.py": "4ade6fda845bd4ff2b8d94a19f47d2e5d0ef9f0c38dcd0fed5993669616293a4",
+    "hac_asteroids/inversion.py": "ed0188afa4a9820ff1f82f34930c637e46f2e0cd0eda155609cd9dcb856c2b35",
+    "hac_asteroids/l4_survey.py": "780ea4199cc9a8c8048484d8eff5e93ebac05fe8148995646400730d0be70491",
+    "hac_asteroids/datasets.py": "b68394ac12b544722ad82c49ca06dc5ed03d2ea2a77c74eba2f6d23cb7a4442f",
+    "hac_asteroids/representation_reporting.py": "897e754f2003fcfe759ff2202553df0c3b1e06adf82f17aa6d4fef1fd04b7648",
+    "hac_asteroids/trajectory.py": "9200e0920e586e8c26bb169930c8993508ed14039d5d7eaff5c0176cba1f0942",
+    "reports/methods_overview/make_figure.py": "27eeaa435c6cd9367f7c44069bb2417070dd37ad778c97aedb5edc9d0862a6d1",
+    "artifacts/octantoid_l4_all10_200_20260910/calibration/asteroid01/calibration.json": "c14592e47889c55d7e1ad590647768357d50d552264f75a68cdb1cb6307e0c68",
+    "artifacts/octantoid_l4_all10_200_20260910/calibration/asteroid02/calibration.json": "1f4e2666e417fd77177467a3345c07787ea9243520945f70bad6db65119ba95f",
+    "artifacts/octantoid_l4_all10_200_20260910/calibration/asteroid03/calibration.json": "4d082e9aacd3ae9ce5d4ac683e1c427f403863e91efed38424b21c058190bcef",
+    "docs/forward-model-correction-results.md": "2a8ea82463ca0c59f75d3e15d2e3699e4e1db212415092b3a045661715018191",
+    "artifacts/octantoid_l4_all10_200_20260910/frozen_configuration.json": "8288db7506e9bf30b0e781794fc6e81c27d56c8123470095ebfdf3fab547644e",
+    "docs/references/aa19267-12.pdf": "73f82755405da55c21c32968be5a2517d4a07afb44b27e42697e2fa454ba5a21",
+    "docs/references/viikinkoski_1358.pdf": "560bbf0a58b061546d468b0ea0ed68dd2f1d1f9b32d723bfe6acdfda7a6f63ec",
+    "docs/references/aa26456-15.pdf": "0a92ae37528f6032c1adbf5e9ee52e1631e604061f4ff34f921bc8cc4b5037d2"
+  },
+  "outputs_sha256": {
+    "figures/asteroid6.pdf": "3c6e84003060df2cccf29fbcf02defc327bc3b2aa5d7562d061bc10ec66d28e1",
+    "figures/asteroid6.png": "06ea7be04b841ea9bd7dd1c7ee126d33e58b20ba89eabbc198bd151a1938f15a",
+    "figures/degree_comparison.pdf": "288091df8b89ba56ffc9f6d581322ebbcebd16032515734e01c0c0a5247efa41",
+    "figures/degree_comparison.png": "73fafb4c93e83832184589d250b0cc8abd82a96f93f8d53d84c0ac93ebde7cfc",
+    "figures/image_formation.pdf": "96e2e5cc41e6a7928544d6762bfe546c85170a51acbc9eb59bcfc390ff89016a",
+    "figures/image_formation.png": "157d51dd2c003d6bc0ee74367bffc70776ded18de08f0eba01376207504f115f",
+    "figures/image_formation_0_hor1_linear_96.png": "e8a573b2fdb17553f7d8ed399a25a1b721e6538ae817085690ac7b17cf9a6e14",
+    "figures/image_formation_0_hor1_quantized_96.png": "9a2ee830abbf43ff2bc794b247b3bd6109cde24f26413b95c34e072f5f432baa",
+    "figures/image_formation_0_hor1_thresholded_96.png": "9a2ee830abbf43ff2bc794b247b3bd6109cde24f26413b95c34e072f5f432baa",
+    "figures/image_formation_225_bottom_linear_96.png": "a39ee5192e427e2a3a818e8b59d9a0ff9f61196409e54bb3ca2cb86d85cb596d",
+    "figures/image_formation_225_bottom_quantized_96.png": "429cd752ab7e2ee7b31b59892d3709f6b9fbde149335a68d8495be9be018d326",
+    "figures/image_formation_225_bottom_thresholded_96.png": "93dfb1d8bd5411a22f195b720bc23bd3f1e245907d5b70f1d1e3b57d8e5c6ece",
+    "figures/reconstruction_asteroid2.pdf": "c6d5cdc083f511281de64270dc377fa909353c74da0ebdcdf79303d654ccdef4",
+    "figures/reconstruction_asteroid2.png": "faa53e57043a9d0193b8841e94e7005137b049d192b65e63bc7422d778401124",
+    "figures/reconstruction_asteroid3.pdf": "aea9f4e85415f79443db0300805fe3734e7f219eab6a9d32b1f17842f5e1aeb5",
+    "figures/reconstruction_asteroid3.png": "554c40ee8d04f7678c0e1c3ecf8719f257ab84a21f097421949aec9404c47fe4",
+    "figures/star_proxy.pdf": "6e271097523e1eb923a8004afbd024214ab4bdfd4df3460f59424d43bd0644c0",
+    "figures/star_proxy.png": "cfc297b03f7aed18f3ec2864f043010f6e68abc142a2b48c87d3a1545927f89b",
+    "tables/calibration_rows.tex": "8b4a0688b0319620194f9ae22480e78f1d561dbaf79083f0fb17dc336bac0ae1",
+    "tables/degree_rows.tex": "23e9c7968d54eb6289eeaa89fa674754abce5450bf6f4da2bb9615c08a7d86af",
+    "tables/l4_rows.tex": "58b58ce1480893ffe33a3d9dbd7bd7ad6cc1a4c55b5010d0e041d30b57d6f009",
+    "tables/quick_rows.tex": "e3aced413552891694c9eb9e010128a52625b26c03caf70981e71d043eb373de",
+    "data/image_formation_native.npz": "68e7f3621da81ba23391a82b1e433e689119a88e37f3358b1d45432bbc5e6b38"
+  },
+  "checks": {
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4": {
+      "selected_iteration": 140,
+      "update_budget": 200,
+      "iterations": 200,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.040250431174369966,
+        "selected": 0.02774836595452949
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 1.6689300537109375e-06,
+        "rms_difference": 4.362074790265069e-08,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4": {
+      "selected_iteration": 200,
+      "update_budget": 200,
+      "iterations": 200,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.6988837812312235,
+        "selected": 0.3669245865190363
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 4.76837158203125e-06,
+        "rms_difference": 8.805110951470851e-08,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4": {
+      "selected_iteration": 200,
+      "update_budget": 200,
+      "iterations": 200,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.15437688674630917,
+        "selected": 0.08696050352279414
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 2.0503997802734375e-05,
+        "rms_difference": 2.7068000463259523e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4": {
+      "selected_iteration": 100,
+      "update_budget": 200,
+      "iterations": 200,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.2347872198669509,
+        "selected": 0.06748920085287699
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 1.6927719116210938e-05,
+        "rms_difference": 2.4690231725799094e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4": {
+      "selected_iteration": 200,
+      "update_budget": 200,
+      "iterations": 200,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.10995730227185728,
+        "selected": 0.09335984544991775
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 4.172325134277344e-06,
+        "rms_difference": 6.939330887689721e-08,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4": {
+      "selected_iteration": 200,
+      "update_budget": 200,
+      "iterations": 200,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.45980338082935107,
+        "selected": 0.151735768042856
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 1.7911195755004883e-05,
+        "rms_difference": 2.2848703906674928e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4": {
+      "selected_iteration": 60,
+      "update_budget": 200,
+      "iterations": 200,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.2979181048427973,
+        "selected": 0.24659105378377097
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 2.110004425048828e-05,
+        "rms_difference": 2.6350588200330094e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l2": {
+      "selected_iteration": 160,
+      "update_budget": 360,
+      "iterations": 300,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.04025043077464001,
+        "selected": 0.034557777784735885
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 2.86102294921875e-05,
+        "rms_difference": 4.5526741132562165e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l4": {
+      "selected_iteration": 180,
+      "update_budget": 360,
+      "iterations": 320,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.04025043081012779,
+        "selected": 0.027107263377188804
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 4.947185516357422e-06,
+        "rms_difference": 1.1851344794422403e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/octantoids_l2_l4_l6_20260910/asteroid01/octantoid_l6": {
+      "selected_iteration": 40,
+      "update_budget": 360,
+      "iterations": 240,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.0402504306029349,
+        "selected": 0.03686411346278248
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 2.3603439331054688e-05,
+        "rms_difference": 4.021318602553947e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l6": {
+      "selected_iteration": 80,
+      "update_budget": 120,
+      "iterations": 120,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.15437688682718986,
+        "selected": 0.06938703264599477
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 4.0531158447265625e-06,
+        "rms_difference": 9.149040636202699e-08,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/radial_sh_l11": {
+      "selected_iteration": 40,
+      "update_budget": 120,
+      "iterations": 120,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.15437688337208683,
+        "selected": 0.06641119480180831
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 5.245208740234375e-06,
+        "rms_difference": 1.1487090034734138e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "artifacts/representations_quick_a3_120_20260909/asteroid03/octantoid_l6": {
+      "selected_iteration": 120,
+      "update_budget": 120,
+      "iterations": 120,
+      "face_count": 1024,
+      "full_turn_rmse": {
+        "initial": 0.15437688608050715,
+        "selected": 0.061363664118873014
+      },
+      "checkpoint_parameters_match": true,
+      "selected_mesh_rebuilt": true,
+      "exported_mesh_matches": true,
+      "observations_match_source": true,
+      "saved_audit_passed": true,
+      "saved_curve_replay": {
+        "max_absolute_difference": 1.8477439880371094e-05,
+        "rms_difference": 2.464084047915094e-07,
+        "atol": 0.0001,
+        "rtol": 0.0001
+      }
+    },
+    "image_formation": {
+      "device": "cpu",
+      "native_shape": [
+        2,
+        96,
+        96
+      ],
+      "rotation_degrees": 45,
+      "selected_iteration": 200,
+      "columns": [
+        "0_hor1",
+        "225_bottom"
+      ],
+      "renderer": {
+        "image_size": 96,
+        "shadow_size": 96,
+        "faces_per_pixel": 4,
+        "blur_radius": 0.0,
+        "framing_scale": 1.2,
+        "camera_distance_radii": 5.0,
+        "light_distance_radii": 4.0,
+        "lambertian_fraction": 0.5,
+        "response": "srgb",
+        "radiance_gain": 0.5,
+        "projection": "perspective",
+        "reference_radius": null,
+        "shadow_bias_radii": 0.002,
+        "shadow_softness_radii": 0.002,
+        "intensity_slope": 8.0,
+        "binary_slope": 96.0,
+        "batch_size": 2,
+        "face_limit": 1024,
+        "allow_large_mesh": false,
+        "max_raster_memory_mib": 512.0,
+        "require_no_grad": false,
+        "max_frames": null,
+        "max_cameras": null
+      },
+      "thresholded_sums": [
+        2582.90185546875,
+        110.25882720947266
+      ],
+      "raw_intensity_matches": true,
+      "display_interpolation": "nearest",
+      "shared_gray_scale": [
+        0,
+        1
+      ]
+    },
+    "proxy": {
+      "views": [
+        {
+          "elevation": 25,
+          "azimuth": 135,
+          "label": "Oblique: 25\u00b0, 135\u00b0"
+        },
+        {
+          "elevation": 0,
+          "azimuth": 90,
+          "label": "Equator: 0\u00b0, 90\u00b0"
+        }
+      ],
+      "common_half_extent": 1.209428383684889,
+      "display": "CPU first-hit orthographic, flat normals, studio light",
+      "asteroid": 3,
+      "reference_faces": 5996,
+      "proxy_faces": 1280,
+      "outermost_ray_rebuilt": true
+    },
+    "reconstruction_2": {
+      "views": [
+        {
+          "elevation": 25,
+          "azimuth": 135,
+          "label": "Oblique: 25\u00b0, 135\u00b0"
+        },
+        {
+          "elevation": 90,
+          "azimuth": -90,
+          "label": "North: 90\u00b0, \u221290\u00b0"
+        }
+      ],
+      "common_half_extent": 1.905255888325765,
+      "display": "CPU first-hit orthographic, flat normals, studio light",
+      "selected_iteration": 200,
+      "update_budget": 200,
+      "scale_alignment": [
+        2.412512229768593,
+        2.3866080464603114
+      ],
+      "rotation_alignment": "none",
+      "reference": "raw public mesh"
+    },
+    "reconstruction_3": {
+      "views": [
+        {
+          "elevation": 25,
+          "azimuth": 135,
+          "label": "Oblique: 25\u00b0, 135\u00b0"
+        },
+        {
+          "elevation": 0,
+          "azimuth": 90,
+          "label": "Equator: 0\u00b0, 90\u00b0"
+        }
+      ],
+      "common_half_extent": 1.209428383684889,
+      "display": "CPU first-hit orthographic, flat normals, studio light",
+      "selected_iteration": 120,
+      "update_budget": 120,
+      "scale_alignment": [
+        1.1164454817690863,
+        1.1402248219781188
+      ],
+      "rotation_alignment": "none",
+      "reference": "raw public mesh"
+    },
+    "asteroid6": {
+      "selected_iteration": 200,
+      "update_budget": 200,
+      "calibration_transfer": true,
+      "reference_available": false,
+      "views": [
+        [
+          25,
+          135,
+          "Oblique: 25\u00b0, 135\u00b0"
+        ],
+        [
+          90,
+          -90,
+          "North: 90\u00b0, \u221290\u00b0"
+        ],
+        [
+          25,
+          -45,
+          "Opposite: 25\u00b0, \u221245\u00b0"
+        ]
+      ],
+      "representative_channel_rmse": {
+        "0_hor1": 0.08866670013023577,
+        "90_top": 0.15457657189270035,
+        "225_bottom": 0.16270724724500538
+      }
+    }
+  }
+}

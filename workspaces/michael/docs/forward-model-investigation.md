@@ -330,9 +330,9 @@ uv run python forward_validation.py \
   --camera-distance-radii 3.5 --no-convergence
 ```
 
-The generated CSV/JSON evidence is under `artifacts/raw_model_sweep/`,
-`artifacts/raw_forward_validation/`, and the
-`artifacts/forward_validation_perspective_*` directories.
+The generated CSV/JSON evidence came from the historical raw-model and forward-
+validation sweeps. Those ignored outputs are not required by the maintained
+workflow and may be regenerated from the documented commands when needed.
 
 ## Verification status
 

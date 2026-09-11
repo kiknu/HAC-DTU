@@ -1,0 +1,72 @@
+{
+  "created_utc": "2026-09-10T21:28:08.444144+00:00",
+  "pages": 10,
+  "pdf_sha256": "7cea9bda31558d7b139c15c11679467a17be6f13fa3fe4e59de60ddad90ba7cb",
+  "latex_warnings": 0,
+  "unresolved_references": false,
+  "all_pages_rendered": true,
+  "visual_review_matches_pdf": true,
+  "figure_count": 6,
+  "l4_reported_asteroids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "l4_table_rows_checked": 10,
+  "verified_saved_fits": 13,
+  "native_image_shape": [
+    2,
+    96,
+    96
+  ],
+  "threshold_reduction_checked": true,
+  "source_archive_files": [
+    "methods_overview.tex",
+    "README.md",
+    "make_figure.py",
+    "verify_report.py",
+    "inputs.json",
+    "evidence.json",
+    "validation.json",
+    "visual_review.json",
+    "data/image_formation_native.npz",
+    "figures/asteroid6.pdf",
+    "figures/asteroid6.png",
+    "figures/degree_comparison.pdf",
+    "figures/degree_comparison.png",
+    "figures/image_formation.pdf",
+    "figures/image_formation.png",
+    "figures/image_formation_0_hor1_linear_96.png",
+    "figures/image_formation_0_hor1_quantized_96.png",
+    "figures/image_formation_0_hor1_thresholded_96.png",
+    "figures/image_formation_225_bottom_linear_96.png",
+    "figures/image_formation_225_bottom_quantized_96.png",
+    "figures/image_formation_225_bottom_thresholded_96.png",
+    "figures/reconstruction_asteroid2.pdf",
+    "figures/reconstruction_asteroid2.png",
+    "figures/reconstruction_asteroid3.pdf",
+    "figures/reconstruction_asteroid3.png",
+    "figures/star_proxy.pdf",
+    "figures/star_proxy.png",
+    "tables/calibration_rows.tex",
+    "tables/degree_rows.tex",
+    "tables/l4_rows.tex",
+    "tables/quick_rows.tex"
+  ],
+  "document_sha256": {
+    "methods_overview.tex": "1979ebb0d4a0bc026df625e87d8f1597a2f8bf63faaeacfc1b0bb9ae4abcd250",
+    "README.md": "d4b3b244b64ecd23b2c122b669bc462e3320c6f67dc04f55301c26dcb3f44500",
+    "verify_report.py": "2fdfc77c6a76173118c4f8b46f2fa6f541125d8d71e24d86e6b2fa6f6de7d739",
+    "evidence.json": "2a28ea8619fb0eae6f9e51e50c44672e9ccb3afeebf3a193856fd97b2a0a3e0f"
+  },
+  "standalone_source_bundle_build": {
+    "engine": "Tectonic",
+    "pages": 10,
+    "latex_warnings": 0,
+    "all_page_text_and_pixels_match_delivered_pdf": true
+  }
+}

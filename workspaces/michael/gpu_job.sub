@@ -1,0 +1,22 @@
+### template for GPU jobs on the c47511 queue
+###
+### Note: the values for -n, -W and mem= are the max. values allowed 
+### to make full usage of the resources, i.e. 4 simultaneous GPU jobs.
+### If you go beyond, you start to block resources!
+###
+#BSUB -J HAC-DTU-job
+#BSUB -q c47511
+#BSUB -R "span[hosts=1]"
+#BSUB -n 16
+#BSUB -W 48:00
+#BSUB -R "rusage[mem=15GB]"
+#BSUB -gpu "num=1:mode=exclusive_process"
+
+# the workload below is for illustrational purposes, and shows the
+# configuration of the GPU - replace with your own workload
+
+module load cuda/13.3.0
+echo $CUDA_VISIBLE_DEVICES
+/appl/cuda/13.3.0/samples/bin/linux/x86_64/linux/release/deviceQuery
+
+sleep 60

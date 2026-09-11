@@ -31,7 +31,8 @@ from torch.utils.checkpoint import checkpoint
 from shape_model import TriangleMesh
 
 torch.set_default_dtype(torch.float32)
-torch.set_float32_matmul_precision("high")
+# Do not enable TF32 globally on import. Reduced-precision camera transforms
+# change shadow depths with batch shape and invalidate chunked derivatives.
 
 # --------------------------------------------------------------------------- #
 # Data I/O

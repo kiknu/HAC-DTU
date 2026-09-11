@@ -66,7 +66,7 @@ def curve_report(
         axis.set_ylabel(columns[index])
         axis.grid(alpha=0.25)
     axes[0].legend(ncol=3)
-    axes[-1].set_xlabel("rotation angle [deg]")
+    axes[-1].set_xlabel("nominal data phase [deg]")
     fig.tight_layout()
     fig.savefig(output_dir / "forward_curves.png", dpi=160)
     plt.close(fig)
@@ -79,7 +79,7 @@ def curve_report(
         cmap="coolwarm", vmin=-np.max(np.abs(residuals)), vmax=np.max(np.abs(residuals)),
     )
     axis.set_yticks(np.arange(len(columns)), columns)
-    axis.set(xlabel="rotation angle [deg]", title="Fitted minus observed intensity")
+    axis.set(xlabel="nominal data phase [deg]", title="Fitted minus observed intensity")
     fig.colorbar(image, ax=axis, label="normalized residual")
     fig.tight_layout()
     fig.savefig(output_dir / "residual_heatmap.png", dpi=160)

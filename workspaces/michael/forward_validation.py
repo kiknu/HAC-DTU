@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import torch
 import trimesh
+from hac_asteroids.provenance import file_sha256, fingerprint
 from trimesh.ray.ray_pyembree import RayMeshIntersector
 
 from forward_model import (
@@ -45,7 +46,7 @@ CALIBRATION_COLUMNS = [
     for kind in ("hor1", "top")
 ]
 ALIGNMENT_COLUMN = "0_hor1"
-MESH_CACHE_VERSION = 3
+MESH_CACHE_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,11 @@ def load_benchmark_mesh(
         raise ValueError("preprocessing must be 'star_proxy' or 'qem'")
     cache = _cache_path(cache_dir, model_num, target_faces, preprocessing)
     source_size = source.stat().st_size
+    cache_identity = fingerprint(dict(
+        source=file_sha256(source), code=file_sha256(Path(__file__)),
+        preprocessing=preprocessing, target_faces=target_faces,
+        trimesh=trimesh.__version__, normalization="center-bounds-z-half-extent",
+    ))
 
     vertices: np.ndarray
     faces: np.ndarray
@@ -205,6 +211,7 @@ def load_benchmark_mesh(
             "cache_version" in saved
             and int(saved["cache_version"]) == MESH_CACHE_VERSION
             and int(saved["source_size"]) == source_size
+            and "identity" in saved and str(saved["identity"]) == cache_identity
             and str(saved["preprocessing"]) == preprocessing
         )
         if cache_valid:
@@ -237,6 +244,7 @@ def load_benchmark_mesh(
             source_size=np.asarray(source_size, dtype=np.int64),
             cache_version=np.asarray(MESH_CACHE_VERSION, dtype=np.int64),
             preprocessing=np.asarray(preprocessing),
+            identity=np.asarray(cache_identity),
         )
 
     mesh = TriangleMesh(

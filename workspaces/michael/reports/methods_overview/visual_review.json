@@ -1,0 +1,26 @@
+{
+  "pdf_sha256": "7cea9bda31558d7b139c15c11679467a17be6f13fa3fe4e59de60ddad90ba7cb",
+  "reviewer": "Codex visual inspection of rendered pages",
+  "pages_inspected": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "checks": [
+    "Equations and mathematical symbols readable and unclipped",
+    "Captions and citations resolved; all five bibliography entries visible",
+    "Six figures legible with reference/proxy labels and distinct fit budgets",
+    "Native pixel demonstration enlarged without smoothing; color scale and camera labels visible",
+    "Ten L4 table rows and transferred-calibration markers readable",
+    "Asteroid 6 interpretation explicitly unverified under transferred calibration",
+    "Operational progress commentary and code-path appendix absent",
+    "No page, figure, axis-label, or table clipping observed"
+  ]
+}

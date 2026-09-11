@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from shape_model import OctantoidShapeModel, TriangleMesh
+from shape_model import OctantoidShapeModel, ShapeModel, TriangleMesh
 from render_safety import DEFAULT_FACE_LIMIT, enforce_face_limit, estimate_raster_memory
 
 _PYTORCH3D_IMPORT_ERROR: ImportError | None = None
@@ -118,6 +118,11 @@ class RendererConfig:
     camera_distance_radii: float = 5.0
     light_distance_radii: float = 4.0
     lambertian_fraction: float = 0.5
+    response: str = "linear"
+    radiance_gain: float = 1.0
+    projection: str = "perspective"
+    # Optional common coordinate gauge for read-only raw/proxy parity controls.
+    reference_radius: float | None = None
     shadow_bias_radii: float = 2e-3
     shadow_softness_radii: float = 2e-3
     intensity_slope: float = 96.0
@@ -143,6 +148,14 @@ class RendererConfig:
             raise ValueError("camera_distance_radii must exceed one")
         if not 0.0 <= self.lambertian_fraction <= 1.0:
             raise ValueError("lambertian_fraction must lie in [0, 1]")
+        if self.response not in ("linear", "srgb"):
+            raise ValueError("response must be linear or srgb")
+        if not math.isfinite(self.radiance_gain) or self.radiance_gain <= 0:
+            raise ValueError("radiance_gain must be finite and positive")
+        if self.projection not in ("perspective", "orthographic"):
+            raise ValueError("projection must be perspective or orthographic")
+        if self.reference_radius is not None and self.reference_radius <= 0:
+            raise ValueError("reference_radius must be positive")
 
     @classmethod
     def smoke(cls) -> "RendererConfig":
@@ -188,6 +201,20 @@ class LightcurvePrediction:
 
 def _normalize_curves(values: torch.Tensor) -> torch.Tensor:
     return values / values.mean(dim=0, keepdim=True).clamp_min(1e-9)
+
+
+def image_response(radiance: torch.Tensor, response: str = "linear", gain: float = 1.0):
+    """Encode linear radiance before either extraction rule, with finite zero derivative."""
+    if not math.isfinite(gain) or gain <= 0:
+        raise ValueError("gain must be finite and positive")
+    values = radiance * gain
+    if response == "srgb":
+        # Clamp the inactive power branch too: where evaluates both branches.
+        values = torch.where(values <= 0.0031308, 12.92 * values,
+                             1.055 * values.clamp_min(0.0031308).pow(1 / 2.4) - 0.055)
+    elif response != "linear":
+        raise ValueError("response must be linear or srgb")
+    return values.clamp(0, 1)
 
 
 def _soft_gate(values: torch.Tensor, threshold: torch.Tensor, slope: float) -> torch.Tensor:
@@ -274,6 +301,9 @@ class PyTorch3DLightcurveModel(nn.Module):
 
     def __init__(self, config: RendererConfig | None = None):
         super().__init__()
+        # Camera transforms need full float32 mantissas: TF32 rounding can move
+        # shadow depths by a substantial fraction of the configured softness.
+        torch.set_float32_matmul_precision("highest")
         if _PYTORCH3D_IMPORT_ERROR is not None:
             raise ImportError(
                 "rendering requires PyTorch3D; install it against the pinned "
@@ -303,6 +333,14 @@ class PyTorch3DLightcurveModel(nn.Module):
         at = torch.zeros_like(eye)
         up = eye.new_tensor([0.0, 0.0, 1.0]).expand_as(eye)
         R, T = look_at_view_transform(eye=eye, at=at, up=up)
+        if self.config.projection == "orthographic":
+            extent = radius * self.config.framing_scale
+            return FoVOrthographicCameras(
+                device=eye.device, R=R, T=T,
+                min_x=-extent, max_x=extent, min_y=-extent, max_y=extent,
+                znear=max(1e-4, float(radius.detach()) * 0.01),
+                zfar=float(radius.detach()) * (float(distance.detach()) + 2.0),
+            )
         fov = 2.0 * torch.atan(
             eye.new_tensor(self.config.framing_scale) / distance
         ) * (180.0 / math.pi)
@@ -398,6 +436,8 @@ class PyTorch3DLightcurveModel(nn.Module):
             ), dim=-1,
         )
         view = F.normalize(camera_eyes[:, None, None, None, :] - positions, dim=-1)
+        if self.config.projection == "orthographic":
+            view = F.normalize(camera_eyes, dim=-1)[:, None, None, None, :]
         sun_dir = F.normalize(sun, dim=-1).view(1, 1, 1, 1, 3)
         mu = (normals * view).sum(dim=-1).clamp_min(0.0)
         mu0 = (normals * sun_dir).sum(dim=-1).clamp_min(0.0)
@@ -429,6 +469,7 @@ class PyTorch3DLightcurveModel(nn.Module):
         phase_offset: torch.Tensor | float = 0.0,
         lambertian_fraction: torch.Tensor | float | None = None,
         return_images: bool = False,
+        return_linear_images: bool = False,
         compute_binary: bool = True,
     ) -> LightcurvePrediction:
         vertices = mesh.vertices
@@ -474,6 +515,8 @@ class PyTorch3DLightcurveModel(nn.Module):
                 f"renderer stage permits at most {self.config.max_cameras} camera(s)"
             )
         radius = torch.linalg.vector_norm(vertices, dim=-1).max().clamp_min(1e-6)
+        if self.config.reference_radius is not None:
+            radius = vertices.new_tensor(self.config.reference_radius)
 
         _, rotated = self._meshes_for_frames(mesh, angles, 1)
         frame_meshes = Meshes(
@@ -499,7 +542,8 @@ class PyTorch3DLightcurveModel(nn.Module):
                     frame_indices[start:stop], radius, mixture,
                 )
             )
-        images = torch.cat(rendered, dim=0)
+        linear_images = torch.cat(rendered, dim=0)
+        images = image_response(linear_images, self.config.response, self.config.radiance_gain)
         prediction = extract_lightcurves(
             images, n_frames, n_cameras, mode=extraction,
             intensity_slope=self.config.intensity_slope,
@@ -511,17 +555,18 @@ class PyTorch3DLightcurveModel(nn.Module):
             binary=prediction.binary,
             raw_intensity=prediction.raw_intensity,
             raw_binary=prediction.raw_binary,
-            images=images.reshape(n_frames, n_cameras, *images.shape[-2:])
-            if return_images else None,
+            images=(linear_images if return_linear_images else images).reshape(
+                n_frames, n_cameras, *images.shape[-2:])
+            if return_images or return_linear_images else None,
         )
 
 
 class OctantoidLightcurveModel(nn.Module):
-    """Single public model mapping octantoid coefficients to both curves."""
+    """Shape-to-lightcurve adapter; historical name retained for compatibility."""
 
     def __init__(
         self,
-        shape: OctantoidShapeModel,
+        shape: ShapeModel,
         renderer: PyTorch3DLightcurveModel | None = None,
     ):
         super().__init__()
