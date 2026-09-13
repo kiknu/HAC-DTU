@@ -9,7 +9,7 @@ import torch
 
 from hac.lc2mesh.metrics import compute_pearson_r
 from hac.lc2mesh.model import LightcurveToMesh, aggregate_neighbors
-from hac.lc2mesh.utils import chamfer_distance
+from hac.lc2mesh.utils import chamfer_distance, edge_length_regularization
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,8 @@ class TrainingConfig:
     hull_weight: float = 0.3
     laplacian_weight: float = 0.1
     displacement_weight: float = 0.0
+    edge_weight: float = 0.0
+    containment_weight: float = 0.0
     eval_every: int = 25
     scheduler_patience: int = 5
     clip_grad_norm: float = 1.0
@@ -34,10 +36,10 @@ class TrainingConfig:
             )
         if min(self.lr_inr, self.lr_graph, self.clip_grad_norm) <= 0:
             raise ValueError("learning rates and clipping threshold must be positive")
-        if min(self.hull_weight, self.laplacian_weight, self.displacement_weight) < 0:
+        if min(self.hull_weight, self.laplacian_weight, self.displacement_weight, self.edge_weight, self.containment_weight) < 0:
             raise ValueError("loss weights must be nonnegative")
-        if self.selection not in {"validation", "training"}:
-            raise ValueError("selection must be 'validation' or 'training'")
+        if self.selection not in {"validation", "training", "last"}:
+            raise ValueError("selection must be 'validation', 'training' or 'last'")
 
 
 @dataclass
@@ -54,6 +56,7 @@ class StageResult:
                 "chamfer",
                 "laplacian",
                 "displacement",
+                "edge",
                 "mean_r",
                 "min_r",
                 "grad_norm",
@@ -107,6 +110,7 @@ def train_stage(
     *,
     stage: int,
     progress: Callable[[dict[str, float]], None] | None = None,
+    containment_planes: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> StageResult:
     """Fit one asteroid; no true mesh or geometry metric enters optimization.
 
@@ -158,6 +162,14 @@ def train_stage(
             reference = net.canonicalize_to_cylinder(reference)
         reference = reference.detach().clone()
 
+    # Unique undirected mesh edges (i < j, self-loops excluded) from the GCN
+    # adjacency, used by the relative edge-length regularizer.
+    adjacency_indices = net.gcn.adjacency.indices()
+    edge_mask = adjacency_indices[0] < adjacency_indices[1]
+    edges = torch.stack(
+        [adjacency_indices[0][edge_mask], adjacency_indices[1][edge_mask]], dim=1
+    )
+
     parameters = list(net.inr.parameters()) if stage == 1 else list(net.parameters())
     groups = [{"params": net.inr.parameters(), "lr": config.lr_inr}]
     if stage == 2:
@@ -185,13 +197,27 @@ def train_stage(
             else zero
         )
         displacement = residual.square().mean() if config.displacement_weight else zero
+        edge = (
+            edge_length_regularization(vertices, reference, edges)
+            if config.edge_weight
+            else zero
+        )
+        # Containment: penalize only vertices OUTSIDE the convex hull (planes
+        # n.x <= d), so Stage 2 may carve inward but not bulge past the hull.
+        containment = zero
+        if config.containment_weight and containment_planes is not None:
+            hull_normals, hull_offsets = containment_planes
+            outside = (vertices[0] @ hull_normals.t() - hull_offsets).clamp_min(0.0)
+            containment = outside.amax(dim=-1).square().mean()
         loss = (
             mse
             + config.hull_weight * hull
             + config.laplacian_weight * laplacian
             + config.displacement_weight * displacement
+            + config.edge_weight * edge
+            + config.containment_weight * containment
         )
-        return loss, mse, hull, laplacian, displacement
+        return loss, mse, hull, laplacian, displacement, edge
 
     @torch.no_grad()
     def evaluate(step):
@@ -217,7 +243,8 @@ def train_stage(
             "score": float(score),
         }
         result.evaluations.append(row)
-        if float(score) < result.best_score:
+        # "last" always keeps the most recent checkpoint (the final step wins).
+        if config.selection == "last" or float(score) < result.best_score:
             result.best_score = float(score)
             result.best_step = step
             best_state = {
@@ -235,7 +262,7 @@ def train_stage(
         optimizer.zero_grad(set_to_none=True)
         vertices = current_vertices()
         prediction = predict_lightcurves(vertices[0])
-        loss, mse, hull, laplacian, displacement = objective(vertices, prediction)
+        loss, mse, hull, laplacian, displacement, edge = objective(vertices, prediction)
         if not torch.isfinite(loss):
             raise FloatingPointError(f"Nonfinite loss at stage {stage}, step {step}")
         loss.backward()
@@ -254,6 +281,7 @@ def train_stage(
             hull,
             laplacian,
             displacement,
+            edge,
             correlations.mean(),
             correlations.min(),
             grad_norm,
