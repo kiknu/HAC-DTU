@@ -1,0 +1,32 @@
+{
+  "source_evaluation": "voxel_cylinder_a1_a3_20260913",
+  "source_manifest_sha256": "f315c6d5c0faf0f15b5e1e0f2e25a4e8eed9c0b87f5f1c6eed6ffc1d1ce65c5a",
+  "source_measurements_sha256": "72a748011bc7cfb5f5d4415afe5c4d2364f598e4bc4fca9a6d354281a04380bc",
+  "source_verification": {
+    "verified": true,
+    "measurements": 492,
+    "unique_checkpoints": 246,
+    "pngs_decoded": 5,
+    "pdfs": 5,
+    "invalid_meshes": 0,
+    "source_hashes_match": true,
+    "checkpoint_stls_match_trajectories": true,
+    "all_normalized_radii_and_z_bounds_match": true,
+    "normalization_comparison_matches": true,
+    "dice_iou_identities_pass": true,
+    "report_links_valid": true,
+    "max_dice_resolution_change": 0.009347691816727677,
+    "cpu_regression_tests_passed": 7
+  },
+  "packaged_files": {
+    "README.md": "c38253aa2487a0c94b9581226535385ff7a106ec561ed7d2a38e4e847fc27e4c",
+    "accuracy_comparison.png": "33593b7f55040f7de471709aa129e520776d76ea287b729e82539b46ea23ff9f",
+    "normalization_comparison.csv": "4ce364e75bc9d996e647c7118ade2f98e70fa1932777b3eaa6cd3c134b5f5738",
+    "normalization_comparison.png": "cb1e300d13d3befdfb6b2d78d5742d57b9058de72d7eafcb487e90f77c772697",
+    "accuracy_comparison.pdf": "1947b4b8b57dd9d1a239c088a82bcedfbc96620f6f0d64aaaf8ddc29accd7afd",
+    "normalization_comparison.pdf": "00ddddbeaaf5300deb7d09a84f2b2dce4df7ae6ac65401cda2d4f52b40c299e0",
+    "measurements.csv": "b64404a2aecfc5e2e8a872050e1feb111446c247c03be838f1928e942085d6b8",
+    "summary.csv": "2d28770ad2ebed60b4fa7171a8b3a084461b6f3b6cae58f3f6b30acce17a2965"
+  },
+  "note": "Verification records refer to the original evaluation. Packaged CSV renames checkpoint to source_checkpoint and uses LF line endings; numerical values are unchanged."
+}

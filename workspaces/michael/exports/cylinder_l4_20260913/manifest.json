@@ -1,0 +1,1973 @@
+{
+  "normalization": "bounds-centered; xy radius=R; z=[-1,1]; no rotation",
+  "radius_source": "origin/inr:src/hac/constants.py MODEL_BASE_RADII",
+  "radii": {
+    "1": 1.12,
+    "2": 1.42,
+    "3": 0.88,
+    "4": 1.475,
+    "5": 1.22,
+    "6": 0.925,
+    "7": 1.205,
+    "8": 1.24,
+    "9": 0.67,
+    "10": 3.95
+  },
+  "exports": [
+    {
+      "asteroid": 1,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid01/sphere_l4/initial.stl",
+      "radius": 1.12,
+      "source": "octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4",
+      "trajectory_sha256": "dd3e23505f0a4769c682af0fa620e82c6d65b7a816ab9b064695891b313cc466",
+      "run_sha256": "79b417ce385e2841e43c9bfc73250e969880cd9b6880bbfdacfe4415d3e33e8c",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 2.2399999127913963,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 1.12,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.1199999879008264,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "2a4bc698720b326d8dc8b4cf285f91b3e8d58ce5b287c72f37e19e6cd7f1f8d8"
+    },
+    {
+      "asteroid": 1,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 140,
+      "file": "asteroid01/sphere_l4/selected.stl",
+      "radius": 1.12,
+      "source": "octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4",
+      "trajectory_sha256": "dd3e23505f0a4769c682af0fa620e82c6d65b7a816ab9b064695891b313cc466",
+      "run_sha256": "79b417ce385e2841e43c9bfc73250e969880cd9b6880bbfdacfe4415d3e33e8c",
+      "transform": {
+        "center": [
+          0.005427762866020203,
+          -0.002163425087928772,
+          0.016260221600532532
+        ],
+        "scale_xy": 2.248958963887548,
+        "scale_z": 2.125407903275106,
+        "target_radius": 1.12,
+        "original_xy_radius": 0.49800819756353815,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.1200000141588027,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "bbffdd1d02a9030c644f009e153c90e20a02136e4670a1d508cd54a47809b860"
+    },
+    {
+      "asteroid": 1,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid01/sphere_l4/terminal.stl",
+      "radius": 1.12,
+      "source": "octantoid_l4_all10_200_20260910/asteroid01/octantoid_l4",
+      "trajectory_sha256": "dd3e23505f0a4769c682af0fa620e82c6d65b7a816ab9b064695891b313cc466",
+      "run_sha256": "79b417ce385e2841e43c9bfc73250e969880cd9b6880bbfdacfe4415d3e33e8c",
+      "transform": {
+        "center": [
+          0.0060132890939712524,
+          -0.00415414571762085,
+          0.015023887157440186
+        ],
+        "scale_xy": 2.253029828166954,
+        "scale_z": 2.1317071054103964,
+        "target_radius": 1.12,
+        "original_xy_radius": 0.49710837646176337,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.1199999611706946,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "775711694a8febb135bb7c969b92147403b778ef8a434a9a85e0c7dc5d9759f2"
+    },
+    {
+      "asteroid": 2,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid02/sphere_l4/initial.stl",
+      "radius": 1.42,
+      "source": "octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4",
+      "trajectory_sha256": "6841d3d99276a2ad7d464bd14484653f70f7661473bd525a5dd7dec9f216a5f4",
+      "run_sha256": "74136227ff22953516739c1d499a571b904904db4a92101a1d8904ad0176a103",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 2.8399998894319487,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 1.42,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.42000003431873,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "5adba6b01c039f7835b9249d28e19806d9509fd3826edaff42166e80c793acd4"
+    },
+    {
+      "asteroid": 2,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 200,
+      "file": "asteroid02/sphere_l4/selected.stl",
+      "radius": 1.42,
+      "source": "octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4",
+      "trajectory_sha256": "6841d3d99276a2ad7d464bd14484653f70f7661473bd525a5dd7dec9f216a5f4",
+      "run_sha256": "74136227ff22953516739c1d499a571b904904db4a92101a1d8904ad0176a103",
+      "transform": {
+        "center": [
+          0.012041360139846802,
+          0.008208557963371277,
+          -0.0010081231594085693
+        ],
+        "scale_xy": 2.540805749577082,
+        "scale_z": 1.8360097871839587,
+        "target_radius": 1.42,
+        "original_xy_radius": 0.5588778285141867,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.4199999486497326,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "7c9bcb9599c0991da0d5bfccc509bc66f654b1049e843c6b7d5a286bc4aca629"
+    },
+    {
+      "asteroid": 2,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid02/sphere_l4/terminal.stl",
+      "radius": 1.42,
+      "source": "octantoid_l4_all10_200_20260910/asteroid02/octantoid_l4",
+      "trajectory_sha256": "6841d3d99276a2ad7d464bd14484653f70f7661473bd525a5dd7dec9f216a5f4",
+      "run_sha256": "74136227ff22953516739c1d499a571b904904db4a92101a1d8904ad0176a103",
+      "transform": {
+        "center": [
+          0.012041360139846802,
+          0.008208557963371277,
+          -0.0010081231594085693
+        ],
+        "scale_xy": 2.540805749577082,
+        "scale_z": 1.8360097871839587,
+        "target_radius": 1.42,
+        "original_xy_radius": 0.5588778285141867,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.4199999486497326,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "7c9bcb9599c0991da0d5bfccc509bc66f654b1049e843c6b7d5a286bc4aca629"
+    },
+    {
+      "asteroid": 3,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid03/sphere_l4/initial.stl",
+      "radius": 0.88,
+      "source": "octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4",
+      "trajectory_sha256": "73c5d22e5287f7a937ba374c4f16d5bda6adf1b759d7e842195d8ad7aec034be",
+      "run_sha256": "105049d365f52774d98e457eafb717f9252ff22ecb1785bb82a3bf68bc964412",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 1.759999931478954,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 0.88,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.8800000060879831,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "2fa43d272028de78e5a40b5490e00b783a6002a5d48bb559ec137817b755e81c"
+    },
+    {
+      "asteroid": 3,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 200,
+      "file": "asteroid03/sphere_l4/selected.stl",
+      "radius": 0.88,
+      "source": "octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4",
+      "trajectory_sha256": "73c5d22e5287f7a937ba374c4f16d5bda6adf1b759d7e842195d8ad7aec034be",
+      "run_sha256": "105049d365f52774d98e457eafb717f9252ff22ecb1785bb82a3bf68bc964412",
+      "transform": {
+        "center": [
+          0.07489408552646637,
+          -0.10792125761508942,
+          0.0106392502784729
+        ],
+        "scale_xy": 1.5369331498151027,
+        "scale_z": 2.0587640285776376,
+        "target_radius": 0.88,
+        "original_xy_radius": 0.5725688199944587,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.8799999772737187,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "e55b9cf01d61e49e57e9c71e27430602da38d621c5b8a50c195530995610567a"
+    },
+    {
+      "asteroid": 3,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid03/sphere_l4/terminal.stl",
+      "radius": 0.88,
+      "source": "octantoid_l4_all10_200_20260910/asteroid03/octantoid_l4",
+      "trajectory_sha256": "73c5d22e5287f7a937ba374c4f16d5bda6adf1b759d7e842195d8ad7aec034be",
+      "run_sha256": "105049d365f52774d98e457eafb717f9252ff22ecb1785bb82a3bf68bc964412",
+      "transform": {
+        "center": [
+          0.07489408552646637,
+          -0.10792125761508942,
+          0.0106392502784729
+        ],
+        "scale_xy": 1.5369331498151027,
+        "scale_z": 2.0587640285776376,
+        "target_radius": 0.88,
+        "original_xy_radius": 0.5725688199944587,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.8799999772737187,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "e55b9cf01d61e49e57e9c71e27430602da38d621c5b8a50c195530995610567a"
+    },
+    {
+      "asteroid": 4,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid04/sphere_l4/initial.stl",
+      "radius": 1.475,
+      "source": "octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4",
+      "trajectory_sha256": "b7de89dc951a19aebaad5126c8c7f75b3d581929c658f4f5ec1335c209a33c90",
+      "run_sha256": "8dc0b07a3da367cbafad71febe0b6d5064f4d7e8d0946cd73cfd39f6807e2dec",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 2.9499998851493836,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 1.475,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.475000005459507,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "7517e566a5c96c8a90c316f880d9e08c80e7c53793068af2b67d16ea2af2e2ad"
+    },
+    {
+      "asteroid": 4,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 100,
+      "file": "asteroid04/sphere_l4/selected.stl",
+      "radius": 1.475,
+      "source": "octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4",
+      "trajectory_sha256": "b7de89dc951a19aebaad5126c8c7f75b3d581929c658f4f5ec1335c209a33c90",
+      "run_sha256": "8dc0b07a3da367cbafad71febe0b6d5064f4d7e8d0946cd73cfd39f6807e2dec",
+      "transform": {
+        "center": [
+          -0.00795319676399231,
+          0.011147230863571167,
+          0.008714854717254639
+        ],
+        "scale_xy": 2.698249208859858,
+        "scale_z": 1.973498736363043,
+        "target_radius": 1.475,
+        "original_xy_radius": 0.546650767155514,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.4749999760578125,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "73ed2ab293f53dc70182132d85677a3aed98d245af3d74b29ae7d74a087210e8"
+    },
+    {
+      "asteroid": 4,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid04/sphere_l4/terminal.stl",
+      "radius": 1.475,
+      "source": "octantoid_l4_all10_200_20260910/asteroid04/octantoid_l4",
+      "trajectory_sha256": "b7de89dc951a19aebaad5126c8c7f75b3d581929c658f4f5ec1335c209a33c90",
+      "run_sha256": "8dc0b07a3da367cbafad71febe0b6d5064f4d7e8d0946cd73cfd39f6807e2dec",
+      "transform": {
+        "center": [
+          -0.012328863143920898,
+          0.021012738347053528,
+          0.027905061841011047
+        ],
+        "scale_xy": 2.681744720036409,
+        "scale_z": 1.9022462447433295,
+        "target_radius": 1.475,
+        "original_xy_radius": 0.5500150663035424,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.4749999525975641,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "5c385c822d8cedc5e8b1b7402f39c2206e96bf4d4aa69d4eb3397481c139308b"
+    },
+    {
+      "asteroid": 5,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid05/sphere_l4/initial.stl",
+      "radius": 1.22,
+      "source": "octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4",
+      "trajectory_sha256": "608eb772b0236b73412c539f044f59873b8f717048c71a01e5aa852d0a0bac2f",
+      "run_sha256": "b889cd97fe5407454eca4e3dcc7d1f2ec4a11ffa9694908ef5f890a4f6c28cca",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 2.4399999050049135,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 1.22,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2200000153454582,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "b90df051f0438218ea8d1595634af4943c90e94faa40ddb3250bc3ab144d8c0a"
+    },
+    {
+      "asteroid": 5,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 200,
+      "file": "asteroid05/sphere_l4/selected.stl",
+      "radius": 1.22,
+      "source": "octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4",
+      "trajectory_sha256": "608eb772b0236b73412c539f044f59873b8f717048c71a01e5aa852d0a0bac2f",
+      "run_sha256": "b889cd97fe5407454eca4e3dcc7d1f2ec4a11ffa9694908ef5f890a4f6c28cca",
+      "transform": {
+        "center": [
+          -0.008308172225952148,
+          0.04847247898578644,
+          0.0005442947149276733
+        ],
+        "scale_xy": 2.2994603790263595,
+        "scale_z": 2.097846846210093,
+        "target_radius": 1.22,
+        "original_xy_radius": 0.5305592612631029,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2199999917590214,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "79fec95f861ca57baff9a1334c6d1b5a7d9ece38d3be04c8d1503cce8a8ff8a3"
+    },
+    {
+      "asteroid": 5,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid05/sphere_l4/terminal.stl",
+      "radius": 1.22,
+      "source": "octantoid_l4_all10_200_20260910/asteroid05/octantoid_l4",
+      "trajectory_sha256": "608eb772b0236b73412c539f044f59873b8f717048c71a01e5aa852d0a0bac2f",
+      "run_sha256": "b889cd97fe5407454eca4e3dcc7d1f2ec4a11ffa9694908ef5f890a4f6c28cca",
+      "transform": {
+        "center": [
+          -0.008308172225952148,
+          0.04847247898578644,
+          0.0005442947149276733
+        ],
+        "scale_xy": 2.2994603790263595,
+        "scale_z": 2.097846846210093,
+        "target_radius": 1.22,
+        "original_xy_radius": 0.5305592612631029,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2199999917590214,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "79fec95f861ca57baff9a1334c6d1b5a7d9ece38d3be04c8d1503cce8a8ff8a3"
+    },
+    {
+      "asteroid": 6,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid06/sphere_l4/initial.stl",
+      "radius": 0.925,
+      "source": "octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4",
+      "trajectory_sha256": "5d43a6830138f9aba74b3f6c4b74fbbe206151849ce140101009b8f81eac2ecc",
+      "run_sha256": "668eeb2a85947247f21f982e4f423fc3fb3f2911c6e136f8459947c83609705b",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 1.849999927975037,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 0.925,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.9249999885123468,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "37e4b5322262f08c65185521ee90fdac89e15e8ef01e7986a2c941b302ee361f"
+    },
+    {
+      "asteroid": 6,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 200,
+      "file": "asteroid06/sphere_l4/selected.stl",
+      "radius": 0.925,
+      "source": "octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4",
+      "trajectory_sha256": "5d43a6830138f9aba74b3f6c4b74fbbe206151849ce140101009b8f81eac2ecc",
+      "run_sha256": "668eeb2a85947247f21f982e4f423fc3fb3f2911c6e136f8459947c83609705b",
+      "transform": {
+        "center": [
+          0.018788769841194153,
+          -0.05145427584648132,
+          0.003981083631515503
+        ],
+        "scale_xy": 1.4480904919365065,
+        "scale_z": 1.6446466861217457,
+        "target_radius": 0.925,
+        "original_xy_radius": 0.6387722349885838,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.9250000172897115,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "2bb82fce3589043a1a6ccb2d7aa1289c1bd6c1f181f37823d3b1af0c6ed891cd"
+    },
+    {
+      "asteroid": 6,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid06/sphere_l4/terminal.stl",
+      "radius": 0.925,
+      "source": "octantoid_l4_all10_200_20260910/asteroid06/octantoid_l4",
+      "trajectory_sha256": "5d43a6830138f9aba74b3f6c4b74fbbe206151849ce140101009b8f81eac2ecc",
+      "run_sha256": "668eeb2a85947247f21f982e4f423fc3fb3f2911c6e136f8459947c83609705b",
+      "transform": {
+        "center": [
+          0.018788769841194153,
+          -0.05145427584648132,
+          0.003981083631515503
+        ],
+        "scale_xy": 1.4480904919365065,
+        "scale_z": 1.6446466861217457,
+        "target_radius": 0.925,
+        "original_xy_radius": 0.6387722349885838,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.9250000172897115,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "2bb82fce3589043a1a6ccb2d7aa1289c1bd6c1f181f37823d3b1af0c6ed891cd"
+    },
+    {
+      "asteroid": 7,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid07/sphere_l4/initial.stl",
+      "radius": 1.205,
+      "source": "octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4",
+      "trajectory_sha256": "b161cc45f14a3da624144e728e8f14f015485aace1e43c73a73f11bfe42525aa",
+      "run_sha256": "1a827203856c2eef7f2f472695870acd224edf487e69e78e61c6841dc434a208",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 2.409999906172886,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 1.205,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2049999881345477,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "a3e59c13ce072bbb97e490d7d7595b2160d7f16da06f4b09ad4cbaebe0c4271b"
+    },
+    {
+      "asteroid": 7,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 60,
+      "file": "asteroid07/sphere_l4/selected.stl",
+      "radius": 1.205,
+      "source": "octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4",
+      "trajectory_sha256": "b161cc45f14a3da624144e728e8f14f015485aace1e43c73a73f11bfe42525aa",
+      "run_sha256": "1a827203856c2eef7f2f472695870acd224edf487e69e78e61c6841dc434a208",
+      "transform": {
+        "center": [
+          -0.044542133808135986,
+          -0.07041274011135101,
+          -0.007917016744613647
+        ],
+        "scale_xy": 2.1691304354027476,
+        "scale_z": 2.0086413446864744,
+        "target_radius": 1.205,
+        "original_xy_radius": 0.55552214856838,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2049999541758756,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "3efc892f715416b10ebac721e519445974346334550fccc0c967bef29714d4d8"
+    },
+    {
+      "asteroid": 7,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid07/sphere_l4/terminal.stl",
+      "radius": 1.205,
+      "source": "octantoid_l4_all10_200_20260910/asteroid07/octantoid_l4",
+      "trajectory_sha256": "b161cc45f14a3da624144e728e8f14f015485aace1e43c73a73f11bfe42525aa",
+      "run_sha256": "1a827203856c2eef7f2f472695870acd224edf487e69e78e61c6841dc434a208",
+      "transform": {
+        "center": [
+          -0.11156792938709259,
+          -0.239497572183609,
+          0.008390843868255615
+        ],
+        "scale_xy": 1.7359684123290158,
+        "scale_z": 1.8864000816751134,
+        "target_radius": 1.205,
+        "original_xy_radius": 0.6941370542470551,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2050000256037612,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "6002e23e980a8443582764348c3157f2c20d35028380dee556b2b843da253b99"
+    },
+    {
+      "asteroid": 8,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid08/sphere_l4/initial.stl",
+      "radius": 1.24,
+      "source": "octantoid_l4_all10_200_20260910/asteroid08/octantoid_l4",
+      "trajectory_sha256": "42b3781ce9766af192432a5c1d53bc016ee20a99b062e9138944286686044ed0",
+      "run_sha256": "0fdb8d13ee255f730fe94d36710a5a6f0f388fe4d868b4ad065d0943771ae74b",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 2.479999903447617,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 1.24,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2400000250692305,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "f174e811e24ff14602563913b5d62c75f0180364d232c438d85a1a0a85570806"
+    },
+    {
+      "asteroid": 8,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 0,
+      "file": "asteroid08/sphere_l4/selected.stl",
+      "radius": 1.24,
+      "source": "octantoid_l4_all10_200_20260910/asteroid08/octantoid_l4",
+      "trajectory_sha256": "42b3781ce9766af192432a5c1d53bc016ee20a99b062e9138944286686044ed0",
+      "run_sha256": "0fdb8d13ee255f730fe94d36710a5a6f0f388fe4d868b4ad065d0943771ae74b",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 2.479999903447617,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 1.24,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2400000250692305,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "f174e811e24ff14602563913b5d62c75f0180364d232c438d85a1a0a85570806"
+    },
+    {
+      "asteroid": 8,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid08/sphere_l4/terminal.stl",
+      "radius": 1.24,
+      "source": "octantoid_l4_all10_200_20260910/asteroid08/octantoid_l4",
+      "trajectory_sha256": "42b3781ce9766af192432a5c1d53bc016ee20a99b062e9138944286686044ed0",
+      "run_sha256": "0fdb8d13ee255f730fe94d36710a5a6f0f388fe4d868b4ad065d0943771ae74b",
+      "transform": {
+        "center": [
+          0.02039337158203125,
+          0.013994380831718445,
+          -0.009946227073669434
+        ],
+        "scale_xy": 2.521150895631243,
+        "scale_z": 1.9163656570952419,
+        "target_radius": 1.24,
+        "original_xy_radius": 0.49183886698282303,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2400000457647837,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "5cd51a4c969cfdcc15c09490f2331ddeb7d1b65f85a790dd9585cf3a0758c8e2"
+    },
+    {
+      "asteroid": 9,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid09/sphere_l4/initial.stl",
+      "radius": 0.67,
+      "source": "octantoid_l4_all10_200_20260910/asteroid09/octantoid_l4",
+      "trajectory_sha256": "981a9dd7228262d3d6f0a070289cdb0205f730a162faf84c044f9d62521e3edd",
+      "run_sha256": "c4d81e3f43268ebdf372c98c0477f14fee71a27ffef7d852f9d1993b1241a304",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 1.3399999478305673,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 0.67,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.6700000051194195,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "61193bf35029272a9d025c2d03baa637be7e8c551c376da51c16d95b1af34e43"
+    },
+    {
+      "asteroid": 9,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 60,
+      "file": "asteroid09/sphere_l4/selected.stl",
+      "radius": 0.67,
+      "source": "octantoid_l4_all10_200_20260910/asteroid09/octantoid_l4",
+      "trajectory_sha256": "981a9dd7228262d3d6f0a070289cdb0205f730a162faf84c044f9d62521e3edd",
+      "run_sha256": "c4d81e3f43268ebdf372c98c0477f14fee71a27ffef7d852f9d1993b1241a304",
+      "transform": {
+        "center": [
+          0.00922459363937378,
+          0.06361936032772064,
+          0.006206393241882324
+        ],
+        "scale_xy": 1.236494689608047,
+        "scale_z": 1.8800859693737189,
+        "target_radius": 0.67,
+        "original_xy_radius": 0.5418543287172397,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.6700000091533223,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "1f1686fc43bb1adc6309bcf1166ab97afcde0d9bc9f08733bfd6c81ba998beda"
+    },
+    {
+      "asteroid": 9,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid09/sphere_l4/terminal.stl",
+      "radius": 0.67,
+      "source": "octantoid_l4_all10_200_20260910/asteroid09/octantoid_l4",
+      "trajectory_sha256": "981a9dd7228262d3d6f0a070289cdb0205f730a162faf84c044f9d62521e3edd",
+      "run_sha256": "c4d81e3f43268ebdf372c98c0477f14fee71a27ffef7d852f9d1993b1241a304",
+      "transform": {
+        "center": [
+          0.021713584661483765,
+          0.08712300658226013,
+          0.08563058078289032
+        ],
+        "scale_xy": 1.2130570205353441,
+        "scale_z": 1.8264735810181574,
+        "target_radius": 0.67,
+        "original_xy_radius": 0.5523235830285347,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.6699999967145432,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "14d88130d3fae60828342e4498149fdc1ac437e493d0e3f67492854788c19f4a"
+    },
+    {
+      "asteroid": 10,
+      "method": "sphere_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid10/sphere_l4/initial.stl",
+      "radius": 3.95,
+      "source": "octantoid_l4_all10_200_20260910/asteroid10/octantoid_l4",
+      "trajectory_sha256": "5e7c0dd4ce6ddb917fd449ec15c09b7f8c649e602f99530c78fa24ab200464c1",
+      "run_sha256": "03ef95e737d6372aa37976f5eca99358ce1f4d2ddd6531432e60485b32c48fdc",
+      "transform": {
+        "center": [
+          0.0,
+          0.0,
+          -0.0003967881202697754
+        ],
+        "scale_xy": 7.899999692433942,
+        "scale_z": 2.0058440962594304,
+        "target_radius": 3.95,
+        "original_xy_radius": 0.500000019466207,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 3.9499999539562736,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "8e5f9b2da28b5c6e03a3751f6b94a886c9486c37773465252113eb8493f2dd8d"
+    },
+    {
+      "asteroid": 10,
+      "method": "sphere_l4",
+      "state": "selected",
+      "iteration": 60,
+      "file": "asteroid10/sphere_l4/selected.stl",
+      "radius": 3.95,
+      "source": "octantoid_l4_all10_200_20260910/asteroid10/octantoid_l4",
+      "trajectory_sha256": "5e7c0dd4ce6ddb917fd449ec15c09b7f8c649e602f99530c78fa24ab200464c1",
+      "run_sha256": "03ef95e737d6372aa37976f5eca99358ce1f4d2ddd6531432e60485b32c48fdc",
+      "transform": {
+        "center": [
+          -0.026791229844093323,
+          0.021387040615081787,
+          -0.02327701449394226
+        ],
+        "scale_xy": 7.147704982494234,
+        "scale_z": 1.90174044359959,
+        "target_radius": 3.95,
+        "original_xy_radius": 0.552624934811121,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 3.949999952329084,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "36c43f921fee21a10c29f43d9e11bca1e7c5a960d7c5ae67a4608fc544d7adf9"
+    },
+    {
+      "asteroid": 10,
+      "method": "sphere_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid10/sphere_l4/terminal.stl",
+      "radius": 3.95,
+      "source": "octantoid_l4_all10_200_20260910/asteroid10/octantoid_l4",
+      "trajectory_sha256": "5e7c0dd4ce6ddb917fd449ec15c09b7f8c649e602f99530c78fa24ab200464c1",
+      "run_sha256": "03ef95e737d6372aa37976f5eca99358ce1f4d2ddd6531432e60485b32c48fdc",
+      "transform": {
+        "center": [
+          -0.06941960752010345,
+          0.033269524574279785,
+          0.01501414179801941
+        ],
+        "scale_xy": 7.135996702192849,
+        "scale_z": 1.747092438556939,
+        "target_radius": 3.95,
+        "original_xy_radius": 0.5535316459417909,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 3.949999978968932,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "c86809a27161b110ae477209ce70659197c91deda8c07aa023bb15717924fb4b"
+    },
+    {
+      "asteroid": 1,
+      "method": "prior_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid01/prior_l4/initial.stl",
+      "radius": 1.12,
+      "source": "prior_l4_all10_200_20260912/asteroid01/prior_l4",
+      "trajectory_sha256": "53a2f0350e6584d4b384a278fb4b500a591653960fcb1ac4f80134274e54f15c",
+      "run_sha256": "17f2bd522fcefc6acad11b54f5d78e9a5b5399d9eb428d8c814f5d10f6394f10",
+      "transform": {
+        "center": [
+          0.0003609210252761841,
+          -0.0008102655410766602,
+          -0.00016282498836517334
+        ],
+        "scale_xy": 2.4148634152086195,
+        "scale_z": 2.426590209159273,
+        "target_radius": 1.12,
+        "original_xy_radius": 0.4637943466890626,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.1200000020032834,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "1d9294f308dae582714073ebf58be8ced350dd71cbc5b0fad8385ad78e754a0b"
+    },
+    {
+      "asteroid": 1,
+      "method": "prior_l4",
+      "state": "selected",
+      "iteration": 0,
+      "file": "asteroid01/prior_l4/selected.stl",
+      "radius": 1.12,
+      "source": "prior_l4_all10_200_20260912/asteroid01/prior_l4",
+      "trajectory_sha256": "53a2f0350e6584d4b384a278fb4b500a591653960fcb1ac4f80134274e54f15c",
+      "run_sha256": "17f2bd522fcefc6acad11b54f5d78e9a5b5399d9eb428d8c814f5d10f6394f10",
+      "transform": {
+        "center": [
+          0.0003609210252761841,
+          -0.0008102655410766602,
+          -0.00016282498836517334
+        ],
+        "scale_xy": 2.4148634152086195,
+        "scale_z": 2.426590209159273,
+        "target_radius": 1.12,
+        "original_xy_radius": 0.4637943466890626,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.1200000020032834,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "1d9294f308dae582714073ebf58be8ced350dd71cbc5b0fad8385ad78e754a0b"
+    },
+    {
+      "asteroid": 1,
+      "method": "prior_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid01/prior_l4/terminal.stl",
+      "radius": 1.12,
+      "source": "prior_l4_all10_200_20260912/asteroid01/prior_l4",
+      "trajectory_sha256": "53a2f0350e6584d4b384a278fb4b500a591653960fcb1ac4f80134274e54f15c",
+      "run_sha256": "17f2bd522fcefc6acad11b54f5d78e9a5b5399d9eb428d8c814f5d10f6394f10",
+      "transform": {
+        "center": [
+          -0.01075562834739685,
+          0.03407879173755646,
+          0.005519658327102661
+        ],
+        "scale_xy": 2.311091163679194,
+        "scale_z": 2.505076645593704,
+        "target_radius": 1.12,
+        "original_xy_radius": 0.484619567415502,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.1199999779654368,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "fa26027bfb5ef13c5f1a02a7936651bc159b1739642b3a0e26e6e02a69a583f9"
+    },
+    {
+      "asteroid": 2,
+      "method": "prior_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid02/prior_l4/initial.stl",
+      "radius": 1.42,
+      "source": "prior_l4_all10_200_20260912/asteroid02/prior_l4",
+      "trajectory_sha256": "cb644993977f3b2f7875f7f5e56ea18f65b1b8b34977f1bec812ad49ab2c6e84",
+      "run_sha256": "ebde02f7660bbb480d7e7eaf089f03758db9a73814ed1cb30a7d7c328a905d9e",
+      "transform": {
+        "center": [
+          -0.0023939162492752075,
+          -0.0026147812604904175,
+          -7.66068696975708e-05
+        ],
+        "scale_xy": 3.3089711943841253,
+        "scale_z": 3.330926746414701,
+        "target_radius": 1.42,
+        "original_xy_radius": 0.42913640421227484,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.4199999447639957,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "d59145d47238fa86895a6fe4ed952e990a3f51e038480b7ed10a601b106baf07"
+    },
+    {
+      "asteroid": 2,
+      "method": "prior_l4",
+      "state": "selected",
+      "iteration": 200,
+      "file": "asteroid02/prior_l4/selected.stl",
+      "radius": 1.42,
+      "source": "prior_l4_all10_200_20260912/asteroid02/prior_l4",
+      "trajectory_sha256": "cb644993977f3b2f7875f7f5e56ea18f65b1b8b34977f1bec812ad49ab2c6e84",
+      "run_sha256": "ebde02f7660bbb480d7e7eaf089f03758db9a73814ed1cb30a7d7c328a905d9e",
+      "transform": {
+        "center": [
+          0.002182990312576294,
+          -0.01090596616268158,
+          0.002088695764541626
+        ],
+        "scale_xy": 3.2950541495418046,
+        "scale_z": 3.259216463522723,
+        "target_radius": 1.42,
+        "original_xy_radius": 0.4309489117796315,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.4200000205539811,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "3c39c61219d0dcde99ae6805fdc7f84817d9ba4ff0f55eb652009edb27ba28d7"
+    },
+    {
+      "asteroid": 2,
+      "method": "prior_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid02/prior_l4/terminal.stl",
+      "radius": 1.42,
+      "source": "prior_l4_all10_200_20260912/asteroid02/prior_l4",
+      "trajectory_sha256": "cb644993977f3b2f7875f7f5e56ea18f65b1b8b34977f1bec812ad49ab2c6e84",
+      "run_sha256": "ebde02f7660bbb480d7e7eaf089f03758db9a73814ed1cb30a7d7c328a905d9e",
+      "transform": {
+        "center": [
+          0.002182990312576294,
+          -0.01090596616268158,
+          0.002088695764541626
+        ],
+        "scale_xy": 3.2950541495418046,
+        "scale_z": 3.259216463522723,
+        "target_radius": 1.42,
+        "original_xy_radius": 0.4309489117796315,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.4200000205539811,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "3c39c61219d0dcde99ae6805fdc7f84817d9ba4ff0f55eb652009edb27ba28d7"
+    },
+    {
+      "asteroid": 3,
+      "method": "prior_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid03/prior_l4/initial.stl",
+      "radius": 0.88,
+      "source": "prior_l4_all10_200_20260912/asteroid03/prior_l4",
+      "trajectory_sha256": "26efbcea9ea82fe25266baa91d74feaf104d7a253e45538c7d9f3c1d751cd213",
+      "run_sha256": "3e5cff3c46d1bc89552ddb5ed51ba9ac644d3718175395398e7ebdfc1f11800a",
+      "transform": {
+        "center": [
+          -2.154707908630371e-05,
+          -0.0015940964221954346,
+          -0.0002547353506088257
+        ],
+        "scale_xy": 2.2095017055041803,
+        "scale_z": 2.216896778897851,
+        "target_radius": 0.88,
+        "original_xy_radius": 0.39827984645035386,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.8800000003969592,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "607f00a32953053611e52a526aab15ff9cd61ef47c286ec33b8bdf99de2c26b8"
+    },
+    {
+      "asteroid": 3,
+      "method": "prior_l4",
+      "state": "selected",
+      "iteration": 0,
+      "file": "asteroid03/prior_l4/selected.stl",
+      "radius": 0.88,
+      "source": "prior_l4_all10_200_20260912/asteroid03/prior_l4",
+      "trajectory_sha256": "26efbcea9ea82fe25266baa91d74feaf104d7a253e45538c7d9f3c1d751cd213",
+      "run_sha256": "3e5cff3c46d1bc89552ddb5ed51ba9ac644d3718175395398e7ebdfc1f11800a",
+      "transform": {
+        "center": [
+          -2.154707908630371e-05,
+          -0.0015940964221954346,
+          -0.0002547353506088257
+        ],
+        "scale_xy": 2.2095017055041803,
+        "scale_z": 2.216896778897851,
+        "target_radius": 0.88,
+        "original_xy_radius": 0.39827984645035386,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.8800000003969592,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "607f00a32953053611e52a526aab15ff9cd61ef47c286ec33b8bdf99de2c26b8"
+    },
+    {
+      "asteroid": 3,
+      "method": "prior_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid03/prior_l4/terminal.stl",
+      "radius": 0.88,
+      "source": "prior_l4_all10_200_20260912/asteroid03/prior_l4",
+      "trajectory_sha256": "26efbcea9ea82fe25266baa91d74feaf104d7a253e45538c7d9f3c1d751cd213",
+      "run_sha256": "3e5cff3c46d1bc89552ddb5ed51ba9ac644d3718175395398e7ebdfc1f11800a",
+      "transform": {
+        "center": [
+          0.002739250659942627,
+          0.020278379321098328,
+          0.0037180334329605103
+        ],
+        "scale_xy": 2.1451946623625964,
+        "scale_z": 2.2783351039871675,
+        "target_radius": 0.88,
+        "original_xy_radius": 0.4102191821747391,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.8800000271998122,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "5e71f1e5297e1f73b34f2ea22a2577eee02d0e709f17505464d02cc01da15ea4"
+    },
+    {
+      "asteroid": 5,
+      "method": "prior_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid05/prior_l4/initial.stl",
+      "radius": 1.22,
+      "source": "prior_l4_all10_200_20260912/asteroid05/prior_l4",
+      "trajectory_sha256": "11512b1fe6995f4c87f53588408227bab0746073bbf88cf3fae0d6730ad51ad1",
+      "run_sha256": "0a1dccd687658e9658322b9bfe81536b0357998a546429bb3599b806e46c510e",
+      "transform": {
+        "center": [
+          0.0010138154029846191,
+          -0.0015177428722381592,
+          0.0007160753011703491
+        ],
+        "scale_xy": 2.5173269685673008,
+        "scale_z": 2.5268464185666373,
+        "target_radius": 1.22,
+        "original_xy_radius": 0.4846410558634522,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2200000034189418,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "f7d69d99a12d27c9e3f99511e4cc03d26a87e8b5ea68552182850eabe1e8a605"
+    },
+    {
+      "asteroid": 5,
+      "method": "prior_l4",
+      "state": "selected",
+      "iteration": 0,
+      "file": "asteroid05/prior_l4/selected.stl",
+      "radius": 1.22,
+      "source": "prior_l4_all10_200_20260912/asteroid05/prior_l4",
+      "trajectory_sha256": "11512b1fe6995f4c87f53588408227bab0746073bbf88cf3fae0d6730ad51ad1",
+      "run_sha256": "0a1dccd687658e9658322b9bfe81536b0357998a546429bb3599b806e46c510e",
+      "transform": {
+        "center": [
+          0.0010138154029846191,
+          -0.0015177428722381592,
+          0.0007160753011703491
+        ],
+        "scale_xy": 2.5173269685673008,
+        "scale_z": 2.5268464185666373,
+        "target_radius": 1.22,
+        "original_xy_radius": 0.4846410558634522,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2200000034189418,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "f7d69d99a12d27c9e3f99511e4cc03d26a87e8b5ea68552182850eabe1e8a605"
+    },
+    {
+      "asteroid": 5,
+      "method": "prior_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid05/prior_l4/terminal.stl",
+      "radius": 1.22,
+      "source": "prior_l4_all10_200_20260912/asteroid05/prior_l4",
+      "trajectory_sha256": "11512b1fe6995f4c87f53588408227bab0746073bbf88cf3fae0d6730ad51ad1",
+      "run_sha256": "0a1dccd687658e9658322b9bfe81536b0357998a546429bb3599b806e46c510e",
+      "transform": {
+        "center": [
+          -0.00301264226436615,
+          0.039643555879592896,
+          0.004718214273452759
+        ],
+        "scale_xy": 2.417381169740346,
+        "scale_z": 2.544567811244852,
+        "target_radius": 1.22,
+        "original_xy_radius": 0.5046783747930996,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2199999838131441,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "556e556e293bea48e4a583dbd68cb93693a9954b7f1a202ea07da5dd1e4554f6"
+    },
+    {
+      "asteroid": 8,
+      "method": "prior_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid08/prior_l4/initial.stl",
+      "radius": 1.24,
+      "source": "prior_l4_all10_200_20260912/asteroid08/prior_l4",
+      "trajectory_sha256": "02e42efaf701143cfb18aff573121518624e29ead2c59298dfd73d964325416f",
+      "run_sha256": "240abf33302fd3916ae035706de90c4193359cee370ed487adfc731d84b62e0d",
+      "transform": {
+        "center": [
+          0.0005828291177749634,
+          -0.007663100957870483,
+          0.0001414269208908081
+        ],
+        "scale_xy": 2.555584415454539,
+        "scale_z": 2.5800845702294875,
+        "target_radius": 1.24,
+        "original_xy_radius": 0.4852119118043112,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2400000167795817,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "1972127ae161d7b92a288ddae497b869c7af7080631c98e45dae9828a1cef228"
+    },
+    {
+      "asteroid": 8,
+      "method": "prior_l4",
+      "state": "selected",
+      "iteration": 40,
+      "file": "asteroid08/prior_l4/selected.stl",
+      "radius": 1.24,
+      "source": "prior_l4_all10_200_20260912/asteroid08/prior_l4",
+      "trajectory_sha256": "02e42efaf701143cfb18aff573121518624e29ead2c59298dfd73d964325416f",
+      "run_sha256": "240abf33302fd3916ae035706de90c4193359cee370ed487adfc731d84b62e0d",
+      "transform": {
+        "center": [
+          0.00615006685256958,
+          -0.010569080710411072,
+          0.0007684379816055298
+        ],
+        "scale_xy": 2.540448939175365,
+        "scale_z": 2.5723052519037046,
+        "target_radius": 1.24,
+        "original_xy_radius": 0.48810270534408245,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2400000149872834,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "824fd6b7f87788a643e5256e89cd9c9123b13e3514d991675c75b80da03f3405"
+    },
+    {
+      "asteroid": 8,
+      "method": "prior_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid08/prior_l4/terminal.stl",
+      "radius": 1.24,
+      "source": "prior_l4_all10_200_20260912/asteroid08/prior_l4",
+      "trajectory_sha256": "02e42efaf701143cfb18aff573121518624e29ead2c59298dfd73d964325416f",
+      "run_sha256": "240abf33302fd3916ae035706de90c4193359cee370ed487adfc731d84b62e0d",
+      "transform": {
+        "center": [
+          0.013520777225494385,
+          -0.013908013701438904,
+          0.00388886034488678
+        ],
+        "scale_xy": 2.525537925422046,
+        "scale_z": 2.5517073210980867,
+        "target_radius": 1.24,
+        "original_xy_radius": 0.4909845096833309,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 1.2399999927644865,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "1c0e0e68d70ead66df65af78a9498a65d9dec36839e3ef13f5b12e445744c6da"
+    },
+    {
+      "asteroid": 9,
+      "method": "prior_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid09/prior_l4/initial.stl",
+      "radius": 0.67,
+      "source": "prior_l4_all10_200_20260912/asteroid09/prior_l4",
+      "trajectory_sha256": "7bc3ec0732595558bcc747440f1704fcd96071f12f50a336f174ebe2fbfd9348",
+      "run_sha256": "e8a42a14fd144de8147c21bb450ff2757c5ad450a008659d57ca90bb480e86d5",
+      "transform": {
+        "center": [
+          0.0015576034784317017,
+          0.0006064176559448242,
+          -2.2739171981811523e-05
+        ],
+        "scale_xy": 2.0059819515381023,
+        "scale_z": 2.0199173056959263,
+        "target_radius": 0.67,
+        "original_xy_radius": 0.3340010110690539,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.670000002828847,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "22dd0d0646729fe884e6e9d37baae8b541a86d492c3a460bd348d4cee62f1d22"
+    },
+    {
+      "asteroid": 9,
+      "method": "prior_l4",
+      "state": "selected",
+      "iteration": 40,
+      "file": "asteroid09/prior_l4/selected.stl",
+      "radius": 0.67,
+      "source": "prior_l4_all10_200_20260912/asteroid09/prior_l4",
+      "trajectory_sha256": "7bc3ec0732595558bcc747440f1704fcd96071f12f50a336f174ebe2fbfd9348",
+      "run_sha256": "e8a42a14fd144de8147c21bb450ff2757c5ad450a008659d57ca90bb480e86d5",
+      "transform": {
+        "center": [
+          0.003309980034828186,
+          0.007806897163391113,
+          0.0005165338516235352
+        ],
+        "scale_xy": 1.985229817478996,
+        "scale_z": 2.049918921294916,
+        "target_radius": 0.67,
+        "original_xy_radius": 0.3374924122642988,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.6700000032903777,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "aa03e6897ab941ec4628ce2509e05157d972ea0fbb63d3e2ad8d319d67ffc6d0"
+    },
+    {
+      "asteroid": 9,
+      "method": "prior_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid09/prior_l4/terminal.stl",
+      "radius": 0.67,
+      "source": "prior_l4_all10_200_20260912/asteroid09/prior_l4",
+      "trajectory_sha256": "7bc3ec0732595558bcc747440f1704fcd96071f12f50a336f174ebe2fbfd9348",
+      "run_sha256": "e8a42a14fd144de8147c21bb450ff2757c5ad450a008659d57ca90bb480e86d5",
+      "transform": {
+        "center": [
+          0.004815250635147095,
+          0.006549209356307983,
+          -0.010305330157279968
+        ],
+        "scale_xy": 1.9486512605372235,
+        "scale_z": 2.0210634455110297,
+        "target_radius": 0.67,
+        "original_xy_radius": 0.3438275557912234,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 0.6699999846552005,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "e96713e4626ba47708dc14de59d6dd9cc7265d83eae4a8e98876958127cae53b"
+    },
+    {
+      "asteroid": 10,
+      "method": "prior_l4",
+      "state": "initial",
+      "iteration": 0,
+      "file": "asteroid10/prior_l4/initial.stl",
+      "radius": 3.95,
+      "source": "prior_l4_all10_200_20260912/asteroid10/prior_l4",
+      "trajectory_sha256": "7625482f8594b3708d4ffa69c0a5f6dbab70c88f367d0977a2ff3071255c4cf5",
+      "run_sha256": "b0ac22a31d4054de60ae4b87e8c14571ba06cf8275334f6a01e49d46a49a4474",
+      "transform": {
+        "center": [
+          -0.00717414915561676,
+          0.0009410828351974487,
+          -0.0011029615998268127
+        ],
+        "scale_xy": 8.040036311118504,
+        "scale_z": 7.86180192012328,
+        "target_radius": 3.95,
+        "original_xy_radius": 0.49129131351528543,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 3.95000000568621,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "cad28e201205d664233126977bcbdc6f4b8774d008e98cee498c57aacb65800e"
+    },
+    {
+      "asteroid": 10,
+      "method": "prior_l4",
+      "state": "selected",
+      "iteration": 0,
+      "file": "asteroid10/prior_l4/selected.stl",
+      "radius": 3.95,
+      "source": "prior_l4_all10_200_20260912/asteroid10/prior_l4",
+      "trajectory_sha256": "7625482f8594b3708d4ffa69c0a5f6dbab70c88f367d0977a2ff3071255c4cf5",
+      "run_sha256": "b0ac22a31d4054de60ae4b87e8c14571ba06cf8275334f6a01e49d46a49a4474",
+      "transform": {
+        "center": [
+          -0.00717414915561676,
+          0.0009410828351974487,
+          -0.0011029615998268127
+        ],
+        "scale_xy": 8.040036311118504,
+        "scale_z": 7.86180192012328,
+        "target_radius": 3.95,
+        "original_xy_radius": 0.49129131351528543,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 3.95000000568621,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "cad28e201205d664233126977bcbdc6f4b8774d008e98cee498c57aacb65800e"
+    },
+    {
+      "asteroid": 10,
+      "method": "prior_l4",
+      "state": "terminal",
+      "iteration": 200,
+      "file": "asteroid10/prior_l4/terminal.stl",
+      "radius": 3.95,
+      "source": "prior_l4_all10_200_20260912/asteroid10/prior_l4",
+      "trajectory_sha256": "7625482f8594b3708d4ffa69c0a5f6dbab70c88f367d0977a2ff3071255c4cf5",
+      "run_sha256": "b0ac22a31d4054de60ae4b87e8c14571ba06cf8275334f6a01e49d46a49a4474",
+      "transform": {
+        "center": [
+          -0.034918367862701416,
+          0.005666404962539673,
+          -0.0005382969975471497
+        ],
+        "scale_xy": 7.398409336743989,
+        "scale_z": 7.903666210195031,
+        "target_radius": 3.95,
+        "original_xy_radius": 0.5338985476759764,
+        "convention": "bounding-box center; xy radius=R and z=[-1,1]; no rotation"
+      },
+      "faces": 1024,
+      "actual_xy_radius": 3.9500000437799345,
+      "z_bounds": [
+        -1.0,
+        1.0
+      ],
+      "validity": {
+        "valid": true,
+        "reasons": [],
+        "watertight": true,
+        "winding_consistent": true,
+        "intersection_check": "transverse nonadjacent faces; coplanar contacts excluded",
+        "faces": 1024
+      },
+      "sha256": "e8167abf1c4b08c156d01687cb2727fa819ad67eba460cfa60e746d3fb4e33f1"
+    }
+  ],
+  "skipped": [
+    {
+      "asteroid": 4,
+      "method": "prior_l4",
+      "reason": "No completed run/trajectory available"
+    },
+    {
+      "asteroid": 6,
+      "method": "prior_l4",
+      "reason": "No completed run/trajectory available"
+    },
+    {
+      "asteroid": 7,
+      "method": "prior_l4",
+      "reason": "No completed run/trajectory available"
+    }
+  ]
+}
