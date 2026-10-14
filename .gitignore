@@ -6,7 +6,6 @@ logs/
 
 *.mp4
 *.obj
-*.stl
 
 # Python
 __pycache__/

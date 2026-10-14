@@ -1,0 +1,18 @@
+[submodule "submissions/1_lc2mesh/submission_repo"]
+	path = submissions/1_lc2mesh/submission_repo
+	url = https://github.com/Ishak96/lc2mesh
+[submodule "submissions/2_convex_kaasalainen/submission_repo"]
+	path = submissions/2_convex_kaasalainen/submission_repo
+	url = https://github.com/Magnushhhh/Convex-Inversion-HAC_DTU
+[submodule "submissions/3_lc2mesh_diff_forward/submission_repo"]
+	path = submissions/3_lc2mesh_diff_forward/submission_repo
+	url = https://github.com/deding2000/HAC-DTU-INR-Mitsuba
+[submodule "submissions/4_small_ball_initial/submission_repo"]
+	path = submissions/4_small_ball_initial/submission_repo
+	url = https://github.com/Hrbibbi/HAC-DTU
+[submodule "submissions/6_large_steps_convex_initial_coarse/submission_repo"]
+	path = submissions/6_large_steps_convex_initial_coarse/submission_repo
+	url = https://github.com/JeppeKlitgaard/HAC-DTU
+[submodule "submissions/7_large_steps_convex_initial_real_data/submission_repo"]
+	path = submissions/7_large_steps_convex_initial_real_data/submission_repo
+	url = https://github.com/deding2000/HAC-DTU-Mitsuba_real_intensity

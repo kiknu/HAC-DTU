@@ -1,0 +1,7 @@
+Dark area percentage: 0.8724301073159046
+Regularization parameter: 0.8
+Area penalty parameter: 0.8
+Reconstruction radius (before cylinder normalization): 3.106387185435975
+True radius: 3.95
+LSL scattering parameter: 0.8
+Optimizer: cg
