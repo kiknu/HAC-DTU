@@ -12,6 +12,6 @@ The full submission repository is present as a _Git Submodule_ in [`submission_r
 
 ## Terse Description
 
-`lc2mesh` using a per-asteroid INR: a SIREN deforms an ellipsoid prior, a graph CNN refines the mesh, and both are optimized through a differentiable mistuba rendering forward model
+`lc2mesh` using a per-asteroid INR: a SIREN deforms an ellipsoid prior, a graph CNN refines the mesh, and both are optimized through a differentiable mitsuba rendering forward model
 
 For longer description, refer to the report in [`/report/`](/report/).

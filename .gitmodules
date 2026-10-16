@@ -16,3 +16,10 @@
 [submodule "submissions/7_large_steps_convex_initial_real_data/submission_repo"]
 	path = submissions/7_large_steps_convex_initial_real_data/submission_repo
 	url = https://github.com/deding2000/HAC-DTU-Mitsuba_real_intensity
+[submodule "submissions/8_octanoid/submission_repo"]
+	path = submissions/8_octanoid/submission_repo
+	url = https://github.com/kiknu/HAC-DTU.git
+	branch = pytorch3D-adam-optimizer
+[submodule "submissions/5_convex_full_sim_data/submission_repo"]
+	path = submissions/5_convex_full_sim_data/submission_repo
+	url = https://github.com/Magnushhhh/Convex-Joint-HAC-DTU
