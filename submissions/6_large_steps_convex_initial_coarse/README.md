@@ -1,4 +1,4 @@
-# Submission 6 – Coarse, Non-Convex Inversion using Mitsuba Forward
+# Submission 6 – Non-Convex Inversion using Mitsuba Forward
 
 This folder contains submission 6 for the Technical University of Denmark (DTU) team to the challenge.
 
@@ -11,6 +11,6 @@ The full submission repository is present as a _Git Submodule_ in [`submission_r
 
 ## Terse Description
 
-Non-convex inversion using large-steps optimisation on differentiable ray-tracing forward from convex initial guess. Features relatively aggressive/coarse hyperparameters as a poor-man's regularisation.
+Non-convex inversion using large-steps optimisation on differentiable ray-tracing forward from convex initial guess. Features relatively 'aggressive' hyperparameters.
 
 For longer description, refer to the report in [`/report/`](/report/).
